@@ -42,6 +42,8 @@ from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
 from modules.CatalogoDeProductos.Producto.models import Producto
 from modules.CatalogoDeProductos.producto_categoria import ProductoCategoria
 from modules.CatalogoDeProductos.producto_ingrediente import ProductoIngrediente
+from modules.VentasPagosTrazabilidad.EstadoPedido.models import EstadoPedido
+from modules.VentasPagosTrazabilidad.FormaPago.models import FormaPago
 
 # ═══════════════════════════════════════════════════════════════
 #  DATOS
@@ -163,6 +165,21 @@ PRODUCTOS = [
         ingredientes=[("Huevo", False, True, 1), ("Leche", False, False, 2),
                       ("Dulce de leche", True, False, 3), ("Vainilla", False, False, 4)],
     ),
+]
+
+ESTADOS_PEDIDO = [
+    EstadoPedido(codigo="PENDIENTE",  descripcion="Pedido creado, pago pendiente",            orden=1, es_terminal=False),
+    EstadoPedido(codigo="CONFIRMADO", descripcion="Pago procesado y confirmado",              orden=2, es_terminal=False),
+    EstadoPedido(codigo="EN_PREP",    descripcion="En preparación en cocina",                  orden=3, es_terminal=False),
+    EstadoPedido(codigo="EN_CAMINO",  descripcion="Despachado al cliente",                    orden=4, es_terminal=False),
+    EstadoPedido(codigo="ENTREGADO",  descripcion="Entrega confirmada",                       orden=5, es_terminal=True),
+    EstadoPedido(codigo="CANCELADO",  descripcion="Pedido cancelado",                         orden=6, es_terminal=True),
+]
+
+FORMAS_PAGO = [
+    FormaPago(codigo="MERCADOPAGO",   descripcion="MercadoPago",      habilitado=True),
+    FormaPago(codigo="EFECTIVO",      descripcion="Efectivo",         habilitado=True),
+    FormaPago(codigo="TRANSFERENCIA", descripcion="Transferencia",    habilitado=True),
 ]
 
 # ═══════════════════════════════════════════════════════════════
@@ -401,6 +418,47 @@ def seed_productos(session: Session):
         ok(f"{creados} producto(s) creado(s)")
 
 
+def seed_estados_pedido(session: Session):
+    """Crea los 6 estados de pedido FSM si no existen (idempotente)."""
+    print(f"\n{AZUL}-- Estados de Pedido --{NORMAL}")
+    creados = 0
+    for estado in ESTADOS_PEDIDO:
+        existing = session.exec(select(EstadoPedido).where(EstadoPedido.codigo == estado.codigo)).first()
+        if existing:
+            skip(f"{estado.codigo:<12} ya existe")
+        else:
+            session.add(estado)
+            session.flush()
+            terminal_str = f"{ROJO}[terminal]{NORMAL}" if estado.es_terminal else f"{GRIS}[no terminal]{NORMAL}"
+            create(f"{estado.codigo:<12} orden={estado.orden} {terminal_str}")
+            creados += 1
+    session.commit()
+    if creados == 0:
+        ok("Todos los estados ya estaban creados")
+    else:
+        ok(f"{creados} estado(s) creado(s)")
+
+
+def seed_formas_pago(session: Session):
+    """Crea las 3 formas de pago si no existen (idempotente)."""
+    print(f"\n{AZUL}-- Formas de Pago --{NORMAL}")
+    creados = 0
+    for fp in FORMAS_PAGO:
+        existing = session.exec(select(FormaPago).where(FormaPago.codigo == fp.codigo)).first()
+        if existing:
+            skip(f"{fp.codigo:<14} ya existe")
+        else:
+            session.add(fp)
+            session.flush()
+            create(f"{fp.codigo:<14} -> {fp.descripcion}")
+            creados += 1
+    session.commit()
+    if creados == 0:
+        ok("Todas las formas de pago ya estaban creadas")
+    else:
+        ok(f"{creados} forma(s) de pago creada(s)")
+
+
 # ═══════════════════════════════════════════════════════════════
 #  RESUMEN FINAL
 # ═══════════════════════════════════════════════════════════════
@@ -450,6 +508,8 @@ def main():
         seed_categorias(session)
         seed_ingredientes(session)
         seed_productos(session)
+        seed_estados_pedido(session)
+        seed_formas_pago(session)
         mostrar_resumen(session)
 
     print(f"{VERDE}¡Sprint completado!{NORMAL}\n")

@@ -5,6 +5,8 @@ from modules.IdentidadYAcceso.Rol.models import Rol
 from modules.IdentidadYAcceso.Usuario.models import Usuario
 from modules.IdentidadYAcceso.usuario_rol import UsuarioRol
 from modules.IdentidadYAcceso.Usuario.service import get_password_hash
+from modules.VentasPagosTrazabilidad.EstadoPedido.models import EstadoPedido
+from modules.VentasPagosTrazabilidad.FormaPago.models import FormaPago
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -37,6 +39,22 @@ USERS_SEED = [
         "email": "client@email.com", "password": "client123",
         "rol_codigo": "CLIENT",
     },
+]
+
+
+ESTADOS_PEDIDO_SEED = [
+    EstadoPedido(codigo="PENDIENTE",  descripcion="Pedido creado, pago pendiente",            orden=1, es_terminal=False),
+    EstadoPedido(codigo="CONFIRMADO", descripcion="Pago procesado y confirmado",              orden=2, es_terminal=False),
+    EstadoPedido(codigo="EN_PREP",    descripcion="En preparación en cocina",                  orden=3, es_terminal=False),
+    EstadoPedido(codigo="EN_CAMINO",  descripcion="Despachado al cliente",                    orden=4, es_terminal=False),
+    EstadoPedido(codigo="ENTREGADO",  descripcion="Entrega confirmada",                       orden=5, es_terminal=True),
+    EstadoPedido(codigo="CANCELADO",  descripcion="Pedido cancelado",                         orden=6, es_terminal=True),
+]
+
+FORMAS_PAGO_SEED = [
+    FormaPago(codigo="MERCADOPAGO",   descripcion="MercadoPago",      habilitado=True),
+    FormaPago(codigo="EFECTIVO",      descripcion="Efectivo",         habilitado=True),
+    FormaPago(codigo="TRANSFERENCIA", descripcion="Transferencia",    habilitado=True),
 ]
 
 
@@ -77,6 +95,22 @@ def seed_users(session: Session):
     session.commit()
 
 
+def seed_estados_pedido(session: Session):
+    for estado in ESTADOS_PEDIDO_SEED:
+        existing = session.exec(select(EstadoPedido).where(EstadoPedido.codigo == estado.codigo)).first()
+        if not existing:
+            session.add(estado)
+    session.commit()
+
+
+def seed_formas_pago(session: Session):
+    for fp in FORMAS_PAGO_SEED:
+        existing = session.exec(select(FormaPago).where(FormaPago.codigo == fp.codigo)).first()
+        if not existing:
+            session.add(fp)
+    session.commit()
+
+
 def run_seed():
     """Run all seeds. Callable from lifespan."""
     engine = create_engine(DATABASE_URL, echo=False)
@@ -84,6 +118,8 @@ def run_seed():
     with Session(engine) as session:
         seed_roles(session)
         seed_users(session)
+        seed_estados_pedido(session)
+        seed_formas_pago(session)
 
 
 if __name__ == "__main__":

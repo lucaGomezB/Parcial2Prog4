@@ -12,6 +12,10 @@ from modules.CatalogoDeProductos.Ingrediente.router import router as ingrediente
 from modules.IdentidadYAcceso.Auth.router import router as auth_router
 from modules.IdentidadYAcceso.Usuario.router import router as usuario_router
 from modules.IdentidadYAcceso.Rol.router import router as rol_router
+from modules.IdentidadYAcceso.DireccionEntrega.router import router as direccion_router
+from modules.VentasPagosTrazabilidad.EstadoPedido.router import router as estado_pedido_router
+from modules.VentasPagosTrazabilidad.FormaPago.router import router as forma_pago_router
+from modules.VentasPagosTrazabilidad.Pedido.router import router as pedido_router
 from modules.CatalogoDeProductos.Categoria.models import Categoria
 from modules.CatalogoDeProductos.Producto.models import Producto
 from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
@@ -20,7 +24,14 @@ from modules.CatalogoDeProductos.producto_ingrediente import ProductoIngrediente
 from modules.IdentidadYAcceso.Rol.models import Rol
 from modules.IdentidadYAcceso.usuario_rol import UsuarioRol
 from modules.IdentidadYAcceso.RefreshToken.models import RefreshToken
+from modules.IdentidadYAcceso.DireccionEntrega.models import DireccionEntrega
 from modules.IdentidadYAcceso.Auth.service import cleanup_expired_tokens
+from modules.VentasPagosTrazabilidad.EstadoPedido.models import EstadoPedido
+from modules.VentasPagosTrazabilidad.FormaPago.models import FormaPago
+from modules.VentasPagosTrazabilidad.Pedido.models import Pedido
+from modules.VentasPagosTrazabilidad.DetallePedido.models import DetallePedido
+from modules.VentasPagosTrazabilidad.HistorialEstadoPedido.models import HistorialEstadoPedido
+from modules.VentasPagosTrazabilidad.Pago.models import Pago
 
 # 1. Carga de entorno y configuración
 load_dotenv()
@@ -65,9 +76,13 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(usuario_router)
 app.include_router(rol_router)
+app.include_router(direccion_router)
 app.include_router(categoria_router)
 app.include_router(producto_router)
 app.include_router(ingrediente_router)
+app.include_router(estado_pedido_router)
+app.include_router(forma_pago_router)
+app.include_router(pedido_router)
 
 @app.get("/")
 def read_root():

@@ -1,11 +1,16 @@
+from datetime import datetime
 from typing import Optional
-from sqlmodel import SQLModel, Field
+from sqlmodel import Field, UniqueConstraint
+from models.base import TimestampModel
 
 
-class UsuarioRol(SQLModel, table=True):
+class UsuarioRol(TimestampModel, table=True):
     __tablename__ = "usuario_rol"
+    __table_args__ = (
+        UniqueConstraint("usuario_id", "rol_codigo", name="uq_usuario_rol"),
+    )
 
-    id: Optional[int] = Field(default=None, primary_key=True)  # Surrogate PK because rol_codigo can be NULL
+    id: Optional[int] = Field(default=None, primary_key=True)  # Surrogate PK — needed because rol_codigo can be NULL
 
     usuario_id: int = Field(
         foreign_key="usuario.id",
@@ -17,3 +22,8 @@ class UsuarioRol(SQLModel, table=True):
         foreign_key="rol.codigo",
         ondelete="SET NULL"    # WEAK: if role deleted, relationship stays (codigo becomes NULL)
     )
+    asignado_por_id: Optional[int] = Field(
+        default=None,
+        # NOTE: no FK constraint to avoid ambiguity with usuario_id's FK to usuario.id
+    )
+    expires_at: Optional[datetime] = Field(default=None)
