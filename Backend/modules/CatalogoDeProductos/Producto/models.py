@@ -14,6 +14,7 @@ class ProductoBase(TimestampModel):
     descripcion: Optional[str] = Field(default=None, max_length=500)
     precio_base: Decimal = Field(default=0, sa_column=Column(Numeric(precision=10, scale=2))) # Uso de Decimal para precisión financiera (10 dígitos, 2 decimales)
     imagenes_url: List[str] = Field(default=[], sa_column=Column(JSON)) # Almacenamiento como JSON en la base de datos
+    stock_cantidad: int = Field(default=0) # INTEGER CHECK >= 0 DEFAULT 0 — ERD v5
     tiempo_prep_min: int = Field(default=0)
     disponible: bool = Field(default=True)
 

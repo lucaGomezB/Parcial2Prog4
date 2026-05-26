@@ -1,15 +1,12 @@
 from sqlmodel import Session, select
 from typing import List
+from models.base_repository import BaseRepository
 from .models import HistorialEstadoPedido
 
 
-class HistorialEstadoPedidoRepository:
+class HistorialEstadoPedidoRepository(BaseRepository[HistorialEstadoPedido]):
     def __init__(self, session: Session):
-        self.session = session
-
-    def add(self, historial: HistorialEstadoPedido):
-        self.session.add(historial)
-        return historial
+        super().__init__(session, HistorialEstadoPedido)
 
     def get_by_pedido(self, pedido_id: int) -> List[HistorialEstadoPedido]:
         statement = (

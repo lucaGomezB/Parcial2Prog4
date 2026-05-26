@@ -1,0 +1,176 @@
+2026-05-25 18:16:50,351 INFO sqlalchemy.engine.Engine select pg_catalog.version()
+2026-05-25 18:16:50,352 INFO sqlalchemy.engine.Engine [raw sql] {}
+2026-05-25 18:16:50,354 INFO sqlalchemy.engine.Engine select current_schema()
+2026-05-25 18:16:50,354 INFO sqlalchemy.engine.Engine [raw sql] {}
+2026-05-25 18:16:50,356 INFO sqlalchemy.engine.Engine show standard_conforming_strings
+2026-05-25 18:16:50,356 INFO sqlalchemy.engine.Engine [raw sql] {}
+2026-05-25 18:16:50,357 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-05-25 18:16:50,367 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = %(table_name)s AND pg_catalog.pg_class.relkind = ANY (ARRAY[%(param_1)s, %(param_2)s, %(param_3)s, %(param_4)s, %(param_5)s]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != %(nspname_1)s
+2026-05-25 18:16:50,368 INFO sqlalchemy.engine.Engine [generated in 0.00118s] {'table_name': 'usuario_rol', 'param_1': 'r', 'param_2': 'p', 'param_3': 'f', 'param_4': 'v', 'param_5': 'm', 'nspname_1': 'pg_catalog'}
+2026-05-25 18:16:50,371 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = %(table_name)s AND pg_catalog.pg_class.relkind = ANY (ARRAY[%(param_1)s, %(param_2)s, %(param_3)s, %(param_4)s, %(param_5)s]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != %(nspname_1)s
+2026-05-25 18:16:50,372 INFO sqlalchemy.engine.Engine [cached since 0.005707s ago] {'table_name': 'refresh_token', 'param_1': 'r', 'param_2': 'p', 'param_3': 'f', 'param_4': 'v', 'param_5': 'm', 'nspname_1': 'pg_catalog'}
+2026-05-25 18:16:50,374 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = %(table_name)s AND pg_catalog.pg_class.relkind = ANY (ARRAY[%(param_1)s, %(param_2)s, %(param_3)s, %(param_4)s, %(param_5)s]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != %(nspname_1)s
+2026-05-25 18:16:50,374 INFO sqlalchemy.engine.Engine [cached since 0.008004s ago] {'table_name': 'direcciones_entrega', 'param_1': 'r', 'param_2': 'p', 'param_3': 'f', 'param_4': 'v', 'param_5': 'm', 'nspname_1': 'pg_catalog'}
+2026-05-25 18:16:50,376 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = %(table_name)s AND pg_catalog.pg_class.relkind = ANY (ARRAY[%(param_1)s, %(param_2)s, %(param_3)s, %(param_4)s, %(param_5)s]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != %(nspname_1)s
+2026-05-25 18:16:50,377 INFO sqlalchemy.engine.Engine [cached since 0.01032s ago] {'table_name': 'estadopedido', 'param_1': 'r', 'param_2': 'p', 'param_3': 'f', 'param_4': 'v', 'param_5': 'm', 'nspname_1': 'pg_catalog'}
+2026-05-25 18:16:50,378 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = %(table_name)s AND pg_catalog.pg_class.relkind = ANY (ARRAY[%(param_1)s, %(param_2)s, %(param_3)s, %(param_4)s, %(param_5)s]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != %(nspname_1)s
+2026-05-25 18:16:50,379 INFO sqlalchemy.engine.Engine [cached since 0.01245s ago] {'table_name': 'formapago', 'param_1': 'r', 'param_2': 'p', 'param_3': 'f', 'param_4': 'v', 'param_5': 'm', 'nspname_1': 'pg_catalog'}
+2026-05-25 18:16:50,380 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = %(table_name)s AND pg_catalog.pg_class.relkind = ANY (ARRAY[%(param_1)s, %(param_2)s, %(param_3)s, %(param_4)s, %(param_5)s]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != %(nspname_1)s
+2026-05-25 18:16:50,381 INFO sqlalchemy.engine.Engine [cached since 0.01469s ago] {'table_name': 'detallepedido', 'param_1': 'r', 'param_2': 'p', 'param_3': 'f', 'param_4': 'v', 'param_5': 'm', 'nspname_1': 'pg_catalog'}
+2026-05-25 18:16:50,383 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = %(table_name)s AND pg_catalog.pg_class.relkind = ANY (ARRAY[%(param_1)s, %(param_2)s, %(param_3)s, %(param_4)s, %(param_5)s]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != %(nspname_1)s
+2026-05-25 18:16:50,383 INFO sqlalchemy.engine.Engine [cached since 0.01681s ago] {'table_name': 'historialestadopedido', 'param_1': 'r', 'param_2': 'p', 'param_3': 'f', 'param_4': 'v', 'param_5': 'm', 'nspname_1': 'pg_catalog'}
+2026-05-25 18:16:50,385 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = %(table_name)s AND pg_catalog.pg_class.relkind = ANY (ARRAY[%(param_1)s, %(param_2)s, %(param_3)s, %(param_4)s, %(param_5)s]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != %(nspname_1)s
+2026-05-25 18:16:50,386 INFO sqlalchemy.engine.Engine [cached since 0.01924s ago] {'table_name': 'pago', 'param_1': 'r', 'param_2': 'p', 'param_3': 'f', 'param_4': 'v', 'param_5': 'm', 'nspname_1': 'pg_catalog'}
+2026-05-25 18:16:50,387 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = %(table_name)s AND pg_catalog.pg_class.relkind = ANY (ARRAY[%(param_1)s, %(param_2)s, %(param_3)s, %(param_4)s, %(param_5)s]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != %(nspname_1)s
+2026-05-25 18:16:50,388 INFO sqlalchemy.engine.Engine [cached since 0.02141s ago] {'table_name': 'pedido', 'param_1': 'r', 'param_2': 'p', 'param_3': 'f', 'param_4': 'v', 'param_5': 'm', 'nspname_1': 'pg_catalog'}
+2026-05-25 18:16:50,389 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = %(table_name)s AND pg_catalog.pg_class.relkind = ANY (ARRAY[%(param_1)s, %(param_2)s, %(param_3)s, %(param_4)s, %(param_5)s]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != %(nspname_1)s
+2026-05-25 18:16:50,390 INFO sqlalchemy.engine.Engine [cached since 0.02363s ago] {'table_name': 'usuario', 'param_1': 'r', 'param_2': 'p', 'param_3': 'f', 'param_4': 'v', 'param_5': 'm', 'nspname_1': 'pg_catalog'}
+2026-05-25 18:16:50,392 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = %(table_name)s AND pg_catalog.pg_class.relkind = ANY (ARRAY[%(param_1)s, %(param_2)s, %(param_3)s, %(param_4)s, %(param_5)s]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != %(nspname_1)s
+2026-05-25 18:16:50,393 INFO sqlalchemy.engine.Engine [cached since 0.0262s ago] {'table_name': 'productocategoria', 'param_1': 'r', 'param_2': 'p', 'param_3': 'f', 'param_4': 'v', 'param_5': 'm', 'nspname_1': 'pg_catalog'}
+2026-05-25 18:16:50,395 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = %(table_name)s AND pg_catalog.pg_class.relkind = ANY (ARRAY[%(param_1)s, %(param_2)s, %(param_3)s, %(param_4)s, %(param_5)s]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != %(nspname_1)s
+2026-05-25 18:16:50,395 INFO sqlalchemy.engine.Engine [cached since 0.02885s ago] {'table_name': 'categoria', 'param_1': 'r', 'param_2': 'p', 'param_3': 'f', 'param_4': 'v', 'param_5': 'm', 'nspname_1': 'pg_catalog'}
+2026-05-25 18:16:50,396 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = %(table_name)s AND pg_catalog.pg_class.relkind = ANY (ARRAY[%(param_1)s, %(param_2)s, %(param_3)s, %(param_4)s, %(param_5)s]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != %(nspname_1)s
+2026-05-25 18:16:50,397 INFO sqlalchemy.engine.Engine [cached since 0.03042s ago] {'table_name': 'productoingrediente', 'param_1': 'r', 'param_2': 'p', 'param_3': 'f', 'param_4': 'v', 'param_5': 'm', 'nspname_1': 'pg_catalog'}
+2026-05-25 18:16:50,398 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = %(table_name)s AND pg_catalog.pg_class.relkind = ANY (ARRAY[%(param_1)s, %(param_2)s, %(param_3)s, %(param_4)s, %(param_5)s]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != %(nspname_1)s
+2026-05-25 18:16:50,398 INFO sqlalchemy.engine.Engine [cached since 0.03186s ago] {'table_name': 'ingrediente', 'param_1': 'r', 'param_2': 'p', 'param_3': 'f', 'param_4': 'v', 'param_5': 'm', 'nspname_1': 'pg_catalog'}
+2026-05-25 18:16:50,399 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = %(table_name)s AND pg_catalog.pg_class.relkind = ANY (ARRAY[%(param_1)s, %(param_2)s, %(param_3)s, %(param_4)s, %(param_5)s]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != %(nspname_1)s
+2026-05-25 18:16:50,400 INFO sqlalchemy.engine.Engine [cached since 0.03326s ago] {'table_name': 'producto', 'param_1': 'r', 'param_2': 'p', 'param_3': 'f', 'param_4': 'v', 'param_5': 'm', 'nspname_1': 'pg_catalog'}
+2026-05-25 18:16:50,401 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = %(table_name)s AND pg_catalog.pg_class.relkind = ANY (ARRAY[%(param_1)s, %(param_2)s, %(param_3)s, %(param_4)s, %(param_5)s]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != %(nspname_1)s
+2026-05-25 18:16:50,401 INFO sqlalchemy.engine.Engine [cached since 0.03467s ago] {'table_name': 'rol', 'param_1': 'r', 'param_2': 'p', 'param_3': 'f', 'param_4': 'v', 'param_5': 'm', 'nspname_1': 'pg_catalog'}
+2026-05-25 18:16:50,402 INFO sqlalchemy.engine.Engine COMMIT
+2026-05-25 18:16:50,691 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-05-25 18:16:50,694 INFO sqlalchemy.engine.Engine SELECT refresh_token.id, refresh_token.usuario_id, refresh_token.token_hash, refresh_token.expires_at, refresh_token.revoked_at, refresh_token.created_at 
+FROM refresh_token 
+WHERE refresh_token.expires_at < %(expires_at_1)s
+2026-05-25 18:16:50,695 INFO sqlalchemy.engine.Engine [generated in 0.00076s] {'expires_at_1': datetime.datetime(2026, 5, 25, 21, 16, 50, 690863)}
+2026-05-25 18:16:50,699 INFO sqlalchemy.engine.Engine COMMIT
+2026-05-25 18:18:01,358 INFO sqlalchemy.engine.Engine select pg_catalog.version()
+2026-05-25 18:18:01,359 INFO sqlalchemy.engine.Engine [raw sql] {}
+2026-05-25 18:18:01,360 INFO sqlalchemy.engine.Engine select current_schema()
+2026-05-25 18:18:01,361 INFO sqlalchemy.engine.Engine [raw sql] {}
+2026-05-25 18:18:01,362 INFO sqlalchemy.engine.Engine show standard_conforming_strings
+2026-05-25 18:18:01,362 INFO sqlalchemy.engine.Engine [raw sql] {}
+2026-05-25 18:18:01,363 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-05-25 18:18:01,367 INFO sqlalchemy.engine.Engine SELECT usuario.deleted_at, usuario.created_at, usuario.updated_at, usuario.nombre, usuario.apellido, usuario.email, usuario.celular, usuario.password_hash, usuario.id 
+FROM usuario 
+WHERE usuario.email = %(email_1)s
+2026-05-25 18:18:01,367 INFO sqlalchemy.engine.Engine [generated in 0.00051s] {'email_1': 'admin@email.com'}
+2026-05-25 18:18:01,676 INFO sqlalchemy.engine.Engine INSERT INTO refresh_token (usuario_id, token_hash, expires_at, revoked_at, created_at) VALUES (%(usuario_id)s, %(token_hash)s, %(expires_at)s, %(revoked_at)s, %(created_at)s) RETURNING refresh_token.id
+2026-05-25 18:18:01,678 INFO sqlalchemy.engine.Engine [generated in 0.00242s] {'usuario_id': 1, 'token_hash': 'bbbfd22800c74e97ba9444910619d77aeaa43dfdc241f19a8bba24c44be9723b', 'expires_at': datetime.datetime(2026, 6, 1, 21, 18, 1, 672152, tzinfo=datetime.timezone.utc), 'revoked_at': None, 'created_at': datetime.datetime(2026, 5, 25, 21, 18, 1, 672152, tzinfo=datetime.timezone.utc)}
+2026-05-25 18:18:01,682 INFO sqlalchemy.engine.Engine COMMIT
+INFO:     127.0.0.1:59122 - "POST /auth/login HTTP/1.1" 200 OK
+2026-05-25 18:18:01,758 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-05-25 18:18:01,761 INFO sqlalchemy.engine.Engine SELECT rol.created_at, rol.updated_at, rol.codigo, rol.nombre, rol.descripcion 
+FROM rol ORDER BY rol.codigo DESC 
+ LIMIT %(param_1)s OFFSET %(param_2)s
+2026-05-25 18:18:01,761 INFO sqlalchemy.engine.Engine [generated in 0.00076s] {'param_1': 100, 'param_2': 0}
+2026-05-25 18:18:01,764 INFO sqlalchemy.engine.Engine COMMIT
+2026-05-25 18:18:01,767 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-05-25 18:18:01,769 INFO sqlalchemy.engine.Engine SELECT rol.created_at AS rol_created_at, rol.updated_at AS rol_updated_at, rol.codigo AS rol_codigo, rol.nombre AS rol_nombre, rol.descripcion AS rol_descripcion 
+FROM rol 
+WHERE rol.codigo = %(pk_1)s
+2026-05-25 18:18:01,770 INFO sqlalchemy.engine.Engine [generated in 0.00071s] {'pk_1': 'STOCK'}
+2026-05-25 18:18:01,772 INFO sqlalchemy.engine.Engine SELECT rol.created_at AS rol_created_at, rol.updated_at AS rol_updated_at, rol.codigo AS rol_codigo, rol.nombre AS rol_nombre, rol.descripcion AS rol_descripcion 
+FROM rol 
+WHERE rol.codigo = %(pk_1)s
+2026-05-25 18:18:01,772 INFO sqlalchemy.engine.Engine [cached since 0.003549s ago] {'pk_1': 'PEDIDOS'}
+2026-05-25 18:18:01,774 INFO sqlalchemy.engine.Engine SELECT rol.created_at AS rol_created_at, rol.updated_at AS rol_updated_at, rol.codigo AS rol_codigo, rol.nombre AS rol_nombre, rol.descripcion AS rol_descripcion 
+FROM rol 
+WHERE rol.codigo = %(pk_1)s
+2026-05-25 18:18:01,775 INFO sqlalchemy.engine.Engine [cached since 0.006172s ago] {'pk_1': 'CLIENT'}
+2026-05-25 18:18:01,777 INFO sqlalchemy.engine.Engine SELECT rol.created_at AS rol_created_at, rol.updated_at AS rol_updated_at, rol.codigo AS rol_codigo, rol.nombre AS rol_nombre, rol.descripcion AS rol_descripcion 
+FROM rol 
+WHERE rol.codigo = %(pk_1)s
+2026-05-25 18:18:01,778 INFO sqlalchemy.engine.Engine [cached since 0.009147s ago] {'pk_1': 'ADMIN'}
+INFO:     127.0.0.1:59122 - "GET /roles/ HTTP/1.1" 200 OK
+2026-05-25 18:18:01,781 INFO sqlalchemy.engine.Engine ROLLBACK
+2026-05-25 18:19:43,416 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-05-25 18:19:43,424 INFO sqlalchemy.engine.Engine SELECT categoria.deleted_at, categoria.created_at, categoria.updated_at, categoria.nombre, categoria.descripcion, categoria.parent_id, categoria.imagen_url, categoria.orden_display, categoria.id 
+FROM categoria 
+WHERE categoria.parent_id IS NULL AND categoria.deleted_at IS NULL
+2026-05-25 18:19:43,425 INFO sqlalchemy.engine.Engine [generated in 0.00194s] {}
+2026-05-25 18:19:43,431 INFO sqlalchemy.engine.Engine COMMIT
+2026-05-25 18:19:43,434 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-05-25 18:19:43,436 INFO sqlalchemy.engine.Engine SELECT categoria.deleted_at AS categoria_deleted_at, categoria.created_at AS categoria_created_at, categoria.updated_at AS categoria_updated_at, categoria.nombre AS categoria_nombre, categoria.descripcion AS categoria_descripcion, categoria.parent_id AS categoria_parent_id, categoria.imagen_url AS categoria_imagen_url, categoria.orden_display AS categoria_orden_display, categoria.id AS categoria_id 
+FROM categoria 
+WHERE categoria.id = %(pk_1)s
+2026-05-25 18:19:43,437 INFO sqlalchemy.engine.Engine [generated in 0.00071s] {'pk_1': 1}
+2026-05-25 18:19:43,441 INFO sqlalchemy.engine.Engine SELECT categoria.deleted_at AS categoria_deleted_at, categoria.created_at AS categoria_created_at, categoria.updated_at AS categoria_updated_at, categoria.nombre AS categoria_nombre, categoria.descripcion AS categoria_descripcion, categoria.parent_id AS categoria_parent_id, categoria.imagen_url AS categoria_imagen_url, categoria.orden_display AS categoria_orden_display, categoria.id AS categoria_id 
+FROM categoria 
+WHERE %(param_1)s = categoria.parent_id
+2026-05-25 18:19:43,442 INFO sqlalchemy.engine.Engine [generated in 0.00071s] {'param_1': 1}
+2026-05-25 18:19:43,444 INFO sqlalchemy.engine.Engine SELECT categoria.deleted_at AS categoria_deleted_at, categoria.created_at AS categoria_created_at, categoria.updated_at AS categoria_updated_at, categoria.nombre AS categoria_nombre, categoria.descripcion AS categoria_descripcion, categoria.parent_id AS categoria_parent_id, categoria.imagen_url AS categoria_imagen_url, categoria.orden_display AS categoria_orden_display, categoria.id AS categoria_id 
+FROM categoria 
+WHERE %(param_1)s = categoria.parent_id
+2026-05-25 18:19:43,445 INFO sqlalchemy.engine.Engine [cached since 0.003778s ago] {'param_1': 2}
+2026-05-25 18:19:43,447 INFO sqlalchemy.engine.Engine SELECT categoria.deleted_at AS categoria_deleted_at, categoria.created_at AS categoria_created_at, categoria.updated_at AS categoria_updated_at, categoria.nombre AS categoria_nombre, categoria.descripcion AS categoria_descripcion, categoria.parent_id AS categoria_parent_id, categoria.imagen_url AS categoria_imagen_url, categoria.orden_display AS categoria_orden_display, categoria.id AS categoria_id 
+FROM categoria 
+WHERE %(param_1)s = categoria.parent_id
+2026-05-25 18:19:43,447 INFO sqlalchemy.engine.Engine [cached since 0.006268s ago] {'param_1': 3}
+2026-05-25 18:19:43,450 INFO sqlalchemy.engine.Engine SELECT categoria.deleted_at AS categoria_deleted_at, categoria.created_at AS categoria_created_at, categoria.updated_at AS categoria_updated_at, categoria.nombre AS categoria_nombre, categoria.descripcion AS categoria_descripcion, categoria.parent_id AS categoria_parent_id, categoria.imagen_url AS categoria_imagen_url, categoria.orden_display AS categoria_orden_display, categoria.id AS categoria_id 
+FROM categoria 
+WHERE categoria.id = %(pk_1)s
+2026-05-25 18:19:43,450 INFO sqlalchemy.engine.Engine [cached since 0.01454s ago] {'pk_1': 4}
+2026-05-25 18:19:43,452 INFO sqlalchemy.engine.Engine SELECT categoria.deleted_at AS categoria_deleted_at, categoria.created_at AS categoria_created_at, categoria.updated_at AS categoria_updated_at, categoria.nombre AS categoria_nombre, categoria.descripcion AS categoria_descripcion, categoria.parent_id AS categoria_parent_id, categoria.imagen_url AS categoria_imagen_url, categoria.orden_display AS categoria_orden_display, categoria.id AS categoria_id 
+FROM categoria 
+WHERE %(param_1)s = categoria.parent_id
+2026-05-25 18:19:43,453 INFO sqlalchemy.engine.Engine [cached since 0.01208s ago] {'param_1': 4}
+2026-05-25 18:19:43,456 INFO sqlalchemy.engine.Engine SELECT categoria.deleted_at AS categoria_deleted_at, categoria.created_at AS categoria_created_at, categoria.updated_at AS categoria_updated_at, categoria.nombre AS categoria_nombre, categoria.descripcion AS categoria_descripcion, categoria.parent_id AS categoria_parent_id, categoria.imagen_url AS categoria_imagen_url, categoria.orden_display AS categoria_orden_display, categoria.id AS categoria_id 
+FROM categoria 
+WHERE %(param_1)s = categoria.parent_id
+2026-05-25 18:19:43,457 INFO sqlalchemy.engine.Engine [cached since 0.01586s ago] {'param_1': 5}
+2026-05-25 18:19:43,459 INFO sqlalchemy.engine.Engine SELECT categoria.deleted_at AS categoria_deleted_at, categoria.created_at AS categoria_created_at, categoria.updated_at AS categoria_updated_at, categoria.nombre AS categoria_nombre, categoria.descripcion AS categoria_descripcion, categoria.parent_id AS categoria_parent_id, categoria.imagen_url AS categoria_imagen_url, categoria.orden_display AS categoria_orden_display, categoria.id AS categoria_id 
+FROM categoria 
+WHERE %(param_1)s = categoria.parent_id
+2026-05-25 18:19:43,460 INFO sqlalchemy.engine.Engine [cached since 0.01878s ago] {'param_1': 6}
+2026-05-25 18:19:43,462 INFO sqlalchemy.engine.Engine SELECT categoria.deleted_at AS categoria_deleted_at, categoria.created_at AS categoria_created_at, categoria.updated_at AS categoria_updated_at, categoria.nombre AS categoria_nombre, categoria.descripcion AS categoria_descripcion, categoria.parent_id AS categoria_parent_id, categoria.imagen_url AS categoria_imagen_url, categoria.orden_display AS categoria_orden_display, categoria.id AS categoria_id 
+FROM categoria 
+WHERE categoria.id = %(pk_1)s
+2026-05-25 18:19:43,463 INFO sqlalchemy.engine.Engine [cached since 0.02696s ago] {'pk_1': 7}
+2026-05-25 18:19:43,465 INFO sqlalchemy.engine.Engine SELECT categoria.deleted_at AS categoria_deleted_at, categoria.created_at AS categoria_created_at, categoria.updated_at AS categoria_updated_at, categoria.nombre AS categoria_nombre, categoria.descripcion AS categoria_descripcion, categoria.parent_id AS categoria_parent_id, categoria.imagen_url AS categoria_imagen_url, categoria.orden_display AS categoria_orden_display, categoria.id AS categoria_id 
+FROM categoria 
+WHERE %(param_1)s = categoria.parent_id
+2026-05-25 18:19:43,465 INFO sqlalchemy.engine.Engine [cached since 0.02433s ago] {'param_1': 7}
+2026-05-25 18:19:43,467 INFO sqlalchemy.engine.Engine SELECT categoria.deleted_at AS categoria_deleted_at, categoria.created_at AS categoria_created_at, categoria.updated_at AS categoria_updated_at, categoria.nombre AS categoria_nombre, categoria.descripcion AS categoria_descripcion, categoria.parent_id AS categoria_parent_id, categoria.imagen_url AS categoria_imagen_url, categoria.orden_display AS categoria_orden_display, categoria.id AS categoria_id 
+FROM categoria 
+WHERE categoria.id = %(pk_1)s
+2026-05-25 18:19:43,468 INFO sqlalchemy.engine.Engine [cached since 0.03196s ago] {'pk_1': 8}
+2026-05-25 18:19:43,470 INFO sqlalchemy.engine.Engine SELECT categoria.deleted_at AS categoria_deleted_at, categoria.created_at AS categoria_created_at, categoria.updated_at AS categoria_updated_at, categoria.nombre AS categoria_nombre, categoria.descripcion AS categoria_descripcion, categoria.parent_id AS categoria_parent_id, categoria.imagen_url AS categoria_imagen_url, categoria.orden_display AS categoria_orden_display, categoria.id AS categoria_id 
+FROM categoria 
+WHERE %(param_1)s = categoria.parent_id
+2026-05-25 18:19:43,470 INFO sqlalchemy.engine.Engine [cached since 0.02946s ago] {'param_1': 8}
+INFO:     127.0.0.1:59138 - "GET /categorias/tree HTTP/1.1" 200 OK
+2026-05-25 18:19:43,474 INFO sqlalchemy.engine.Engine ROLLBACK
+ 

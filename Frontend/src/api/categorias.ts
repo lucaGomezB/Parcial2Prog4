@@ -22,11 +22,23 @@ export interface CategoriaUpdate {
   orden_display?: number | null;
 }
 
+export interface CategoriaTree {
+  id: number;
+  nombre: string;
+  descripcion: string | null;
+  parent_id: number | null;
+  imagen_url: string | null;
+  orden_display: number;
+  subcategorias: CategoriaTree[];
+}
+
 export const categoriasApi = {
   getAll: (skip = 0, limit = 100) =>
     apiFetch<Categoria[]>(`/categorias/?skip=${skip}&limit=${limit}`),
 
   getById: (id: number) => apiFetch<Categoria>(`/categorias/${id}`),
+
+  getTree: () => apiFetch<CategoriaTree[]>("/categorias/tree"),
 
   create: (data: CategoriaCreate) =>
     apiFetch<Categoria>("/categorias/", {

@@ -3,10 +3,11 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
-from jose import jwt
+import jwt
 from sqlmodel import Session, select
 from modules.IdentidadYAcceso.Usuario.models import Usuario
 from modules.IdentidadYAcceso.RefreshToken.models import RefreshToken
+from ..uow import IdentidadYAccesoUnitOfWork
 from models.base import get_utc_now
 from .config import settings
 from .schemas import TokenData
@@ -51,15 +52,16 @@ def create_refresh_token(session: Session, usuario_id: int) -> str:
     now = get_utc_now()
     expires_at = now + timedelta(days=7)
 
-    db_token = RefreshToken(
-        usuario_id=usuario_id,
-        token_hash=token_hash,
-        expires_at=expires_at,
-        created_at=now,
-    )
-    session.add(db_token)
-    session.commit()
-    session.refresh(db_token)
+    with IdentidadYAccesoUnitOfWork(session) as uow:
+        db_token = RefreshToken(
+            usuario_id=usuario_id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+            created_at=now,
+        )
+        uow.refresh_tokens.add(db_token)
+        # No necesita refresh(): el UoW commitea al salir del with,
+        # y solo retornamos raw_token, no db_token.
 
     return raw_token
 
@@ -67,33 +69,25 @@ def create_refresh_token(session: Session, usuario_id: int) -> str:
 def validate_refresh_token(session: Session, raw_token: str) -> Optional[RefreshToken]:
     """Valida un refresh token: busca por hash, que no esté revocado y no haya expirado."""
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
-    now = get_utc_now()
-
-    stmt = select(RefreshToken).where(
-        RefreshToken.token_hash == token_hash,
-        RefreshToken.revoked_at.is_(None),
-        RefreshToken.expires_at > now,
-    )
-    return session.exec(stmt).first()
+    with IdentidadYAccesoUnitOfWork(session) as uow:
+        return uow.refresh_tokens.get_by_hash(token_hash)
 
 
 def revoke_refresh_token(session: Session, raw_token: str) -> bool:
     """Revoca un refresh token (setea revoked_at). Retorna True si se revocó, False si no se encontró."""
-    stored = validate_refresh_token(session, raw_token)
-    if not stored:
-        return False
-
-    stored.revoked_at = get_utc_now()
-    session.add(stored)
-    session.commit()
-    return True
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    with IdentidadYAccesoUnitOfWork(session) as uow:
+        stored = uow.refresh_tokens.get_by_hash(token_hash)
+        if not stored:
+            return False
+        stored.revoked_at = get_utc_now()
+        uow.refresh_tokens.add(stored)
+        return True
 
 
 def cleanup_expired_tokens(session: Session):
     """Elimina todos los refresh tokens expirados de la BD."""
-    now = get_utc_now()
-    stmt = select(RefreshToken).where(RefreshToken.expires_at < now)
-    expired = session.exec(stmt).all()
-    for token in expired:
-        session.delete(token)
-    session.commit()
+    with IdentidadYAccesoUnitOfWork(session) as uow:
+        expired = uow.refresh_tokens.get_expired()
+        for token in expired:
+            uow.refresh_tokens.delete(token)

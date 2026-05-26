@@ -10,6 +10,9 @@ class ProductoService:
         with CatalogoDeProductosUnitOfWork(session) as uow:
             producto_data = data.model_dump(exclude={"categorias_ids", "categoria_principal_id", "ingredientes"})
             db_producto = Producto(**producto_data)
+            # Regla de negocio: stock 0 → no disponible automáticamente
+            if db_producto.stock_cantidad == 0:
+                db_producto.disponible = False
             uow.productos.add(db_producto)
             uow.productos.flush()
 
@@ -53,8 +56,20 @@ class ProductoService:
                 return None
 
             values = data.model_dump(exclude_unset=True)
+
+            # Guardar estado anterior para detectar transiciones
+            old_disponible = db_producto.disponible
+
             for key, value in values.items():
                 setattr(db_producto, key, value)
+
+            # Regla: si disponible cambió de False → True, sumar 1 al stock
+            if db_producto.disponible is True and old_disponible is False:
+                db_producto.stock_cantidad = (db_producto.stock_cantidad or 0) + 1
+
+            # Regla de negocio: stock 0 → no disponible automáticamente
+            if db_producto.stock_cantidad == 0:
+                db_producto.disponible = False
 
             uow.productos.add(db_producto)
             uow.commit()

@@ -74,7 +74,7 @@ def login(
 @router.get("/me")
 def get_me(current_user: Usuario = Depends(get_current_user)):
     """
-    Devuelve la información del usuario autenticado.
+    Devuelve la información del usuario autenticado + sus roles.
     Requiere token JWT válido.
     """
     return {
@@ -83,6 +83,7 @@ def get_me(current_user: Usuario = Depends(get_current_user)):
         "apellido": current_user.apellido,
         "email": current_user.email,
         "celular": current_user.celular,
+        "roles": [rol.codigo for rol in current_user.roles],
     }
 
 

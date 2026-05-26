@@ -1,0 +1,7 @@
+INFO:     Will watch for changes in these directories: ['C:\\notas\\2026\\Trabajo Final\\Trabajo-final-Prog4\\Parcial2Prog4\\Parcial2Prog4\\Backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [4444] using WatchFiles
+INFO:     Started server process [1088]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'modules\IdentidadYAcceso\Auth\router.py'. Reloading...

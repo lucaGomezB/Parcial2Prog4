@@ -21,6 +21,7 @@ Tipos de datos creados:
 
 import os
 import sys
+import random
 from pathlib import Path
 
 # ── Asegurar que podemos importar los módulos del backend ──
@@ -376,12 +377,17 @@ def seed_productos(session: Session):
             skip(f"{prod_data['nombre']:<30} ya existe")
             continue
 
+        stock = random.randint(0, 500)
+        # Regla de negocio: stock 0 → no disponible
+        disponible = prod_data["disponible"] and stock > 0
+
         producto = Producto(
             nombre=prod_data["nombre"],
             descripcion=prod_data["descripcion"],
             precio_base=prod_data["precio"],
+            stock_cantidad=stock,
             tiempo_prep_min=prod_data["tiempo"],
-            disponible=prod_data["disponible"],
+            disponible=disponible,
         )
         session.add(producto)
         session.flush()

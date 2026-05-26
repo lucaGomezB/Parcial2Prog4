@@ -1,11 +1,13 @@
-import { useReducer, useEffect, useCallback, useState } from "react";
+import { useReducer, useEffect, useCallback, useState, useRef } from "react";
 import type { Producto, ProductoCreate, ProductoIngredienteRead, ProductoCategoriaRead } from "../api/productos";
 import { productosApi } from "../api/productos";
 import type { Ingrediente } from "../api/ingredientes";
 import { ingredientesApi } from "../api/ingredientes";
 import type { Categoria } from "../api/categorias";
 import { categoriasApi } from "../api/categorias";
+import { useNavigate } from "react-router-dom";
 import { exportToExcel } from "../utils/exportExcel";
+import { addToCart, getItemCount } from "../utils/carrito";
 
 const PAGE_SIZE = 10;
 
@@ -17,6 +19,7 @@ interface State {
   filter: string;
   editingId: number | null;
   showForm: boolean;
+  stockEditOnly: boolean;
   form: ProductoCreate;
   selectedCategorias: {id: number, nombre: string, descripcion: string | null}[];
   selectedIngredientes: {id: number, nombre: string, es_alergeno: boolean}[];
@@ -31,6 +34,7 @@ type Action =
   | { type: "SET_PAGE"; payload: number }
   | { type: "SET_FILTER"; payload: string }
   | { type: "START_EDIT"; payload: Producto }
+  | { type: "START_STOCK_EDIT"; payload: Producto }
   | { type: "START_CREATE" }
   | { type: "CLOSE_FORM" }
   | { type: "UPDATE_FORM"; payload: Partial<ProductoCreate> }
@@ -41,7 +45,7 @@ type Action =
 
 const emptyForm: ProductoCreate = {
   nombre: "", descripcion: "", precio_base: 0, tiempo_prep_min: 0,
-  disponible: true, imagenes_url: [], categorias_ids: [], ingredientes: [],
+  disponible: true, stock_cantidad: 0, imagenes_url: [], categorias_ids: [], ingredientes: [],
 };
 
 function reducer(state: State, action: Action): State {
@@ -53,11 +57,12 @@ function reducer(state: State, action: Action): State {
     case "SET_FILTER": return { ...state, filter: action.payload, page: 0 };
     case "START_EDIT":
       return {
-        ...state, editingId: action.payload.id, showForm: true,
+        ...state, editingId: action.payload.id, showForm: true, stockEditOnly: false,
         form: {
           nombre: action.payload.nombre,
           descripcion: action.payload.descripcion ?? "",
           precio_base: action.payload.precio_base,
+          stock_cantidad: action.payload.stock_cantidad,
           tiempo_prep_min: action.payload.tiempo_prep_min,
           disponible: action.payload.disponible,
           imagenes_url: action.payload.imagenes_url,
@@ -67,8 +72,25 @@ function reducer(state: State, action: Action): State {
         showCategoriaSelector: false,
         showIngredienteSelector: false,
       };
-    case "START_CREATE": return { ...state, editingId: null, showForm: true, form: emptyForm, selectedCategorias: [], selectedIngredientes: [], showCategoriaSelector: false, showIngredienteSelector: false };
-    case "CLOSE_FORM": return { ...state, showForm: false, editingId: null, form: emptyForm, selectedCategorias: [], selectedIngredientes: [], showCategoriaSelector: false, showIngredienteSelector: false };
+    case "START_STOCK_EDIT":
+      return {
+        ...state, editingId: action.payload.id, showForm: true, stockEditOnly: true,
+        form: {
+          nombre: action.payload.nombre,
+          descripcion: action.payload.descripcion ?? "",
+          precio_base: action.payload.precio_base,
+          stock_cantidad: action.payload.stock_cantidad,
+          tiempo_prep_min: action.payload.tiempo_prep_min,
+          disponible: action.payload.disponible,
+          imagenes_url: action.payload.imagenes_url,
+        },
+        selectedCategorias: [],
+        selectedIngredientes: [],
+        showCategoriaSelector: false,
+        showIngredienteSelector: false,
+      };
+    case "START_CREATE": return { ...state, editingId: null, showForm: true, stockEditOnly: false, form: emptyForm, selectedCategorias: [], selectedIngredientes: [], showCategoriaSelector: false, showIngredienteSelector: false };
+    case "CLOSE_FORM": return { ...state, showForm: false, editingId: null, stockEditOnly: false, form: emptyForm, selectedCategorias: [], selectedIngredientes: [], showCategoriaSelector: false, showIngredienteSelector: false };
     case "UPDATE_FORM": return { ...state, form: { ...state.form, ...action.payload } };
     case "SET_SELECTED_CATEGORIAS": return { ...state, selectedCategorias: action.payload, form: { ...state.form, categorias_ids: action.payload.map(c => c.id) } };
     case "SET_SELECTED_INGREDIENTES": return { ...state, selectedIngredientes: action.payload, form: { ...state.form, ingredientes: action.payload.map(i => ({ ingrediente_id: i.id, es_removible: true, es_principal: false, orden: 0 })) } };
@@ -80,7 +102,7 @@ function reducer(state: State, action: Action): State {
 
 const init: State = {
   items: [], loading: false, error: null, page: 0, filter: "",
-  editingId: null, showForm: false, form: emptyForm,
+  editingId: null, showForm: false, stockEditOnly: false, form: emptyForm,
   selectedCategorias: [], selectedIngredientes: [], showCategoriaSelector: false, showIngredienteSelector: false,
 };
 
@@ -193,6 +215,7 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
   const [ings, setIngs] = useState<ProductoIngredienteRead[]>([]);
   const [allIngs, setAllIngs] = useState<Ingrediente[]>([]);
   const [loading, setLoading] = useState(true);
+  const [toggling, setToggling] = useState<number | null>(null);
   const [addForm, setAddForm] = useState({ ingrediente_id: 0, es_removible: true, es_principal: false, orden: 0 });
   const [showAdd, setShowAdd] = useState(false);
 
@@ -223,6 +246,22 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
     load();
   };
 
+  const handleToggleAlergeno = async (ingredienteId: number, currentValue: boolean) => {
+    setToggling(ingredienteId);
+    try {
+      await ingredientesApi.update(ingredienteId, { es_alergeno: !currentValue });
+      await load(); // Recargar todo para reflejar cambios
+    } catch {
+      // Si no tiene permisos, el backend devuelve 403
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  // Helper: buscar info del ingrediente completo desde allIngs
+  const getIngInfo = (ingredienteId: number) =>
+    allIngs.find((i) => i.id === ingredienteId);
+
   // Filter out already-assigned ingredients
   const availableIngs = allIngs.filter(
     (ai) => !ings.some((i) => i.ingrediente_id === ai.id)
@@ -230,7 +269,7 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded p-6 w-full max-w-lg max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded p-6 w-full max-w-2xl max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-bold">Ingredientes de "{productoNombre}"</h2>
           <button onClick={onClose} className="text-gray-500 text-xl cursor-pointer">✕</button>
@@ -245,30 +284,50 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
                 <thead><tr className="bg-gray-200">
                   <th className="border p-2 text-left">Orden</th>
                   <th className="border p-2 text-left">Ingrediente</th>
+                  <th className="border p-2 text-left">Alérgeno</th>
                   <th className="border p-2 text-left">Removible</th>
                   <th className="border p-2 text-left">Principal</th>
                   <th className="border p-2 text-left">Acciones</th>
                 </tr></thead>
                 <tbody>
-                  {ings.map((ing) => (
-                    <tr key={ing.ingrediente_id}>
-                      <td className="border p-2">{ing.orden}</td>
-                      <td className="border p-2">{ing.ingrediente_nombre}</td>
-                      <td className="border p-2">{ing.es_removible ? "Sí" : "No"}</td>
-                      <td className="border p-2">{ing.es_principal ? "Sí" : "No"}</td>
-                      <td className="border p-2">
-                        <button onClick={() => handleRemove(ing.ingrediente_id)}
-                          className="bg-red-600 text-white px-2 py-1 rounded text-sm cursor-pointer">Quitar</button>
-                      </td>
-                    </tr>
-                  ))}
+                  {ings.map((ing) => {
+                    const info = getIngInfo(ing.ingrediente_id);
+                    const isAlergeno = info?.es_alergeno ?? false;
+                    return (
+                      <tr key={ing.ingrediente_id}>
+                        <td className="border p-2">{ing.orden}</td>
+                        <td className="border p-2">{ing.ingrediente_nombre}</td>
+                        <td className="border p-2">
+                          <span className="inline-flex items-center gap-1">
+                            <span className={isAlergeno ? "text-red-600 font-medium" : "text-gray-500"}>
+                              {isAlergeno ? "Sí" : "No"}
+                            </span>
+                            <button
+                              onClick={() => handleToggleAlergeno(ing.ingrediente_id, isAlergeno)}
+                              disabled={toggling === ing.ingrediente_id}
+                              className="text-xs border border-gray-400 rounded px-1.5 py-0.5 hover:bg-gray-100 cursor-pointer disabled:opacity-50"
+                              title={isAlergeno ? "Marcar como no alérgeno" : "Marcar como alérgeno"}
+                            >
+                              {toggling === ing.ingrediente_id ? "..." : "Cambiar"}
+                            </button>
+                          </span>
+                        </td>
+                        <td className="border p-2">{ing.es_removible ? "Sí" : "No"}</td>
+                        <td className="border p-2">{ing.es_principal ? "Sí" : "No"}</td>
+                        <td className="border p-2">
+                          <button onClick={() => handleRemove(ing.ingrediente_id)}
+                            className="bg-red-600 text-white px-2 py-1 rounded text-sm cursor-pointer hover:bg-red-700">Quitar</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
 
             {!showAdd ? (
               <button onClick={() => setShowAdd(true)}
-                className="bg-green-600 text-white px-4 py-1 rounded cursor-pointer">+ Agregar Ingrediente</button>
+                className="bg-green-600 text-white px-4 py-1 rounded cursor-pointer hover:bg-green-700">+ Agregar Ingrediente</button>
             ) : (
               <div className="border p-3 rounded bg-gray-50">
                 <div className="grid grid-cols-2 gap-2 mb-2">
@@ -432,18 +491,46 @@ function CategoriasPopup({ productoId, productoNombre, onClose }: {
 }
 
 /* ── Página principal ── */
-export default function ProductosCRUD({ readOnly = false }: { readOnly?: boolean }) {
+export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'stock' | 'pedidos' | 'client' }) {
+  const navigate = useNavigate();
+  const readOnly = role === 'client';
+  const isStockMode = role === 'stock';
+  const hideCreate = role !== 'admin';
+  const hideDelete = role === 'client' || role === 'stock';
+  const hideRelations = role === 'client' || role === 'stock';
+  const hideExport = role === 'client' || role === 'stock';
   const [state, dispatch] = useReducer(reducer, init);
   const [ingPopup, setIngPopup] = useState<{ id: number; nombre: string } | null>(null);
   const [catPopup, setCatPopup] = useState<{ id: number; nombre: string } | null>(null);
   const [allCats, setAllCats] = useState<Categoria[]>([]);
   const [allIngs, setAllIngs] = useState<Ingrediente[]>([]);
+  const [recentlyAdded, setRecentlyAdded] = useState<Set<number>>(new Set());
+  const addTimerRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
-  // Load all categories and ingredients
+  const handleAddToCart = (prod: Producto) => {
+    addToCart(prod.id, prod.nombre, Number(prod.precio_base));
+
+    // Feedback visual
+    setRecentlyAdded((prev) => new Set(prev).add(prod.id));
+    const existingTimer = addTimerRef.current.get(prod.id);
+    if (existingTimer) clearTimeout(existingTimer);
+    const timer = setTimeout(() => {
+      setRecentlyAdded((prev) => {
+        const next = new Set(prev);
+        next.delete(prod.id);
+        return next;
+      });
+      addTimerRef.current.delete(prod.id);
+    }, 1200);
+    addTimerRef.current.set(prod.id, timer);
+  };
+
+  // Load all categories and ingredients (only for admin/pedidos)
   useEffect(() => {
-    categoriasApi.getAll(0, 1000).then(setAllCats);
-    ingredientesApi.getAll(0, 1000).then(setAllIngs);
-  }, []);
+    if (hideRelations) return;
+    categoriasApi.getAll(0, 1000).then(setAllCats).catch(() => {});
+    ingredientesApi.getAll(0, 1000).then(setAllIngs).catch(() => {});
+  }, [hideRelations]);
 
   // Load selected for editing
   useEffect(() => {
@@ -467,10 +554,28 @@ export default function ProductosCRUD({ readOnly = false }: { readOnly?: boolean
     try {
       const data = await productosApi.getAll(state.page * PAGE_SIZE, PAGE_SIZE);
       dispatch({ type: "SET_ITEMS", payload: data });
+
+      // Auto-corregir productos con stock=0 pero disponible=true
+      // Solo si el usuario tiene permisos de escritura (no client)
+      if (!readOnly) {
+        const toFix = data.filter((p) => p.stock_cantidad === 0 && p.disponible === true);
+        for (const prod of toFix) {
+          try {
+            await productosApi.update(prod.id, { disponible: false });
+          } catch {
+            // Si no tiene permisos, silenciosamente ignoramos
+          }
+        }
+        if (toFix.length > 0) {
+          // Recargar para reflejar los cambios
+          const freshData = await productosApi.getAll(state.page * PAGE_SIZE, PAGE_SIZE);
+          dispatch({ type: "SET_ITEMS", payload: freshData });
+        }
+      }
     } catch (e) {
       dispatch({ type: "SET_ERROR", payload: (e as Error).message });
     }
-  }, [state.page]);
+  }, [state.page, readOnly]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -478,12 +583,21 @@ export default function ProductosCRUD({ readOnly = false }: { readOnly?: boolean
     e.preventDefault();
     try {
       if (state.editingId) {
-        await productosApi.update(state.editingId, {
-          nombre: state.form.nombre,
-          descripcion: state.form.descripcion,
-          precio_base: state.form.precio_base,
-          disponible: state.form.disponible,
-        });
+        if (state.stockEditOnly) {
+          // Solo actualiza stock y disponibilidad
+          await productosApi.update(state.editingId, {
+            stock_cantidad: state.form.stock_cantidad,
+            disponible: state.form.disponible,
+          });
+        } else {
+          await productosApi.update(state.editingId, {
+            nombre: state.form.nombre,
+            descripcion: state.form.descripcion,
+            precio_base: state.form.precio_base,
+            stock_cantidad: state.form.stock_cantidad,
+            disponible: state.form.disponible,
+          });
+        }
       } else {
         await productosApi.create(state.form);
       }
@@ -514,65 +628,89 @@ export default function ProductosCRUD({ readOnly = false }: { readOnly?: boolean
       {state.error && <p className="text-red-500 mb-4">{state.error}</p>}
 
       <div className="flex gap-2 mb-4 items-center">
-        {!readOnly && (
+        {!hideCreate && (
           <button onClick={() => dispatch({ type: "START_CREATE" })}
             className="bg-green-600 text-white px-4 py-1 rounded cursor-pointer">Crear Producto</button>
         )}
         <input type="text" placeholder="Filtrar por nombre..." value={state.filter}
           onChange={(e) => dispatch({ type: "SET_FILTER", payload: e.target.value })}
           className="border px-2 py-1 rounded flex-grow" />
-        {!readOnly && (
-          <button onClick={() => exportToExcel(filtered.map(({ id, nombre, precio_base, disponible, tiempo_prep_min }) => ({
-              id, nombre, precio_base, tiempo_prep_min, disponible: disponible ? "Sí" : "No",
+        {!hideExport && (
+          <button onClick={() => exportToExcel(filtered.map(({ id, nombre, precio_base, stock_cantidad, disponible, tiempo_prep_min }) => ({
+              id, nombre, precio_base, stock_cantidad, tiempo_prep_min, disponible: disponible ? "Sí" : "No",
             })), "productos")}
             className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer">Exportar Excel</button>
         )}
       </div>
 
-      {state.showForm && !readOnly && (
+      {state.showForm && (!hideCreate || state.stockEditOnly) && (
         <form onSubmit={handleSubmit} className="border p-4 mb-4 rounded bg-gray-50">
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium">Nombre</label>
-              <input value={state.form.nombre}
-                onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { nombre: e.target.value } })}
-                className="border px-2 py-1 rounded w-full" required />
+          {state.stockEditOnly ? (
+            /* ── STOCK: solo stock y disponibilidad ── */
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium">Stock</label>
+                <input type="number" min="0" value={state.form.stock_cantidad ?? 0}
+                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { stock_cantidad: Number(e.target.value) } })}
+                  className="border px-2 py-1 rounded w-full" />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">Disponible</label>
+                <input type="checkbox" checked={state.form.disponible ?? true}
+                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { disponible: e.target.checked } })} />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium">Descripción</label>
-              <input value={state.form.descripcion ?? ""}
-                onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { descripcion: e.target.value } })}
-                className="border px-2 py-1 rounded w-full" />
+          ) : (
+            /* ── ADMIN/PEDIDOS: formulario completo ── */
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium">Nombre</label>
+                <input value={state.form.nombre}
+                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { nombre: e.target.value } })}
+                  className="border px-2 py-1 rounded w-full" required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Descripción</label>
+                <input value={state.form.descripcion ?? ""}
+                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { descripcion: e.target.value } })}
+                  className="border px-2 py-1 rounded w-full" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Precio Base</label>
+                <input type="number" step="0.01" value={state.form.precio_base ?? 0}
+                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { precio_base: Number(e.target.value) } })}
+                  className="border px-2 py-1 rounded w-full" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Stock</label>
+                <input type="number" min="0" value={state.form.stock_cantidad ?? 0}
+                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { stock_cantidad: Number(e.target.value) } })}
+                  className="border px-2 py-1 rounded w-full" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Tiempo Prep. (min)</label>
+                <input type="number" value={state.form.tiempo_prep_min ?? 0}
+                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { tiempo_prep_min: Number(e.target.value) } })}
+                  className="border px-2 py-1 rounded w-full" />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">Disponible</label>
+                <input type="checkbox" checked={state.form.disponible ?? true}
+                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { disponible: e.target.checked } })} />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium">Precio Base</label>
-              <input type="number" step="0.01" value={state.form.precio_base ?? 0}
-                onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { precio_base: Number(e.target.value) } })}
-                className="border px-2 py-1 rounded w-full" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Tiempo Prep. (min)</label>
-              <input type="number" value={state.form.tiempo_prep_min ?? 0}
-                onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { tiempo_prep_min: Number(e.target.value) } })}
-                className="border px-2 py-1 rounded w-full" />
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">Disponible</label>
-              <input type="checkbox" checked={state.form.disponible ?? true}
-                onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { disponible: e.target.checked } })} />
-            </div>
-          </div>
+          )}
 
           <div className="flex gap-2 mt-4">
             <button type="submit" className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer">
-              {state.editingId ? "Actualizar" : "Crear"}</button>
+              {state.stockEditOnly ? "Actualizar Stock" : (state.editingId ? "Actualizar" : "Crear")}</button>
             <button type="button" onClick={() => dispatch({ type: "CLOSE_FORM" })}
               className="bg-gray-400 text-white px-4 py-1 rounded cursor-pointer">Cancelar</button>
           </div>
         </form>
       )}
 
-      {!state.editingId && state.showForm && !readOnly && (
+      {!state.editingId && state.showForm && !hideCreate && !isStockMode && (
         <>
           <div className="border p-4 mb-4 rounded bg-gray-50">
             <h3 className="text-lg font-medium mb-2">Categorías</h3>
@@ -632,14 +770,16 @@ export default function ProductosCRUD({ readOnly = false }: { readOnly?: boolean
             {!readOnly && <th className="border p-2 text-left">ID</th>}
             <th className="border p-2 text-left">Nombre</th>
             <th className="border p-2 text-left">Precio</th>
-            <th className="border p-2 text-left">Prep (min)</th>
+            {!readOnly && <th className="border p-2 text-left">Stock</th>}
+            {!isStockMode && <th className="border p-2 text-left">Prep (min)</th>}
             <th className="border p-2 text-left">Disponible</th>
-            {!readOnly && (
-              <>
-                <th className="border p-2 text-left">Relaciones</th>
-                <th className="border p-2 text-left">Acciones</th>
-              </>
+            {!readOnly && !isStockMode && (
+              <th className="border p-2 text-left">Relaciones</th>
             )}
+            {!readOnly && (
+              <th className="border p-2 text-left">Acciones</th>
+            )}
+            <th className="border p-2 text-left">Agregar al carrito</th>
           </tr></thead>
           <tbody>
             {filtered.map((prod) => (
@@ -647,41 +787,80 @@ export default function ProductosCRUD({ readOnly = false }: { readOnly?: boolean
                 {!readOnly && <td className="border p-2">{prod.id}</td>}
                 <td className="border p-2">{prod.nombre}</td>
                 <td className="border p-2">${prod.precio_base}</td>
-                <td className="border p-2">{prod.tiempo_prep_min}</td>
-                <td className="border p-2">{prod.disponible ? "Sí" : "No"}</td>
                 {!readOnly && (
-                  <>
-                    <td className="border p-2 flex gap-1">
-                      <button onClick={() => setIngPopup({ id: prod.id, nombre: prod.nombre })}
-                        className="bg-purple-600 text-white px-2 py-1 rounded text-sm cursor-pointer">Ingredientes</button>
-                      <button onClick={() => setCatPopup({ id: prod.id, nombre: prod.nombre })}
-                        className="bg-teal-600 text-white px-2 py-1 rounded text-sm cursor-pointer">Categorías</button>
-                    </td>
-                    <td className="border p-2">
-                      <div className="flex gap-1">
-                        <button onClick={() => dispatch({ type: "START_EDIT", payload: prod })}
-                          className="bg-yellow-500 text-white px-2 py-1 rounded text-sm cursor-pointer">Editar</button>
-                        <button onClick={() => handleDelete(prod.id)}
-                          className="bg-red-600 text-white px-2 py-1 rounded text-sm cursor-pointer">Eliminar</button>
-                      </div>
-                    </td>
-                  </>
+                  <td className="border p-2">
+                    <span className={`font-mono font-semibold ${prod.stock_cantidad === 0 ? 'text-red-600' : 'text-green-700'}`}>
+                      {prod.stock_cantidad}
+                    </span>
+                  </td>
                 )}
+                {!isStockMode && <td className="border p-2">{prod.tiempo_prep_min}</td>}
+                <td className="border p-2">
+                  <span className={`font-medium ${prod.disponible ? 'text-green-700' : 'text-red-600'}`}>
+                    {prod.disponible ? "Sí" : "No"}
+                  </span>
+                </td>
+                {!readOnly && !isStockMode && (
+                  <td className="border p-2">
+                    <div className="flex gap-1">
+                      <button onClick={() => setIngPopup({ id: prod.id, nombre: prod.nombre })}
+                        className="bg-purple-600 text-white px-2 py-1 rounded text-sm cursor-pointer hover:bg-purple-700">Ingredientes</button>
+                      <button onClick={() => setCatPopup({ id: prod.id, nombre: prod.nombre })}
+                        className="bg-teal-600 text-white px-2 py-1 rounded text-sm cursor-pointer hover:bg-teal-700">Categorías</button>
+                    </div>
+                  </td>
+                )}
+                {!readOnly && (
+                  <td className="border p-2">
+                    <div className="flex gap-1 flex-wrap">
+                      {!isStockMode && (
+                        <button onClick={() => dispatch({ type: "START_EDIT", payload: prod })}
+                          className="bg-yellow-500 text-white px-2 py-1 rounded text-sm cursor-pointer hover:bg-yellow-600">Editar</button>
+                      )}
+                      <button onClick={() => dispatch({ type: "START_STOCK_EDIT", payload: prod })}
+                        className="bg-amber-700 text-white px-2 py-1 rounded text-sm cursor-pointer hover:bg-amber-800">Editar Stock</button>
+                      {!isStockMode && !hideDelete && (
+                        <button onClick={() => handleDelete(prod.id)}
+                          className="bg-red-600 text-white px-2 py-1 rounded text-sm cursor-pointer hover:bg-red-700">Eliminar</button>
+                      )}
+                    </div>
+                  </td>
+                )}
+                <td className="border p-2">
+                  <button
+                    onClick={() => handleAddToCart(prod)}
+                    className={`px-2 py-1 rounded text-sm cursor-pointer transition-colors ${
+                      recentlyAdded.has(prod.id)
+                        ? "bg-green-600 text-white"
+                        : "bg-blue-600 text-white hover:bg-blue-700"
+                    }`}
+                  >
+                    {recentlyAdded.has(prod.id) ? "✓ Agregado" : "Agregar al carrito"}
+                  </button>
+                </td>
               </tr>
             ))}
-            {filtered.length === 0 && <tr><td colSpan={readOnly ? 5 : 7} className="border p-2 text-center text-gray-500">Sin resultados</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={readOnly ? 5 : (isStockMode ? 7 : 9)} className="border p-2 text-center text-gray-500">Sin resultados</td></tr>}
           </tbody>
         </table>
       )}
 
-      <div className="flex gap-2 mt-4 items-center">
-        <button disabled={state.page === 0}
-          onClick={() => dispatch({ type: "SET_PAGE", payload: state.page - 1 })}
-          className="bg-gray-300 px-3 py-1 rounded disabled:opacity-50 cursor-pointer">← Anterior</button>
-        <span>Página {state.page + 1}</span>
-        <button disabled={state.items.length < PAGE_SIZE}
-          onClick={() => dispatch({ type: "SET_PAGE", payload: state.page + 1 })}
-          className="bg-gray-300 px-3 py-1 rounded disabled:opacity-50 cursor-pointer">Siguiente →</button>
+      <div className="flex gap-2 mt-4 items-center justify-between">
+        <div className="flex gap-2 items-center">
+          <button disabled={state.page === 0}
+            onClick={() => dispatch({ type: "SET_PAGE", payload: state.page - 1 })}
+            className="bg-gray-300 px-3 py-1 rounded disabled:opacity-50 cursor-pointer">← Anterior</button>
+          <span>Página {state.page + 1}</span>
+          <button disabled={state.items.length < PAGE_SIZE}
+            onClick={() => dispatch({ type: "SET_PAGE", payload: state.page + 1 })}
+            className="bg-gray-300 px-3 py-1 rounded disabled:opacity-50 cursor-pointer">Siguiente →</button>
+        </div>
+        <button
+          onClick={() => navigate("/carrito")}
+          className="bg-green-700 text-white px-4 py-1.5 rounded text-sm font-semibold hover:bg-green-800 cursor-pointer"
+        >
+          Ver Carrito {getItemCount() > 0 ? `(${getItemCount()})` : ""}
+        </button>
       </div>
 
       {/* Popups */}

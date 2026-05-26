@@ -1,6 +1,6 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
+import jwt
 from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
 from core.database import get_session
@@ -35,7 +35,7 @@ def get_current_user(
             algorithms=[settings.ALGORITHM]
         )
         token_data = TokenData(**payload)
-    except JWTError:
+    except jwt.InvalidTokenError:
         raise credentials_exception
 
     stmt = (
@@ -76,7 +76,7 @@ def get_current_user_optional(
             .options(selectinload(Usuario.roles))
         )
         return session.exec(stmt).first()
-    except JWTError:
+    except jwt.InvalidTokenError:
         return None
 
 

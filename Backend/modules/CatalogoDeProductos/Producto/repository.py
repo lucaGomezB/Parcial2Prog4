@@ -1,5 +1,6 @@
 from sqlmodel import Session, col, select
 
+from models.base_repository import BaseRepository
 from ..producto_categoria import ProductoCategoria
 from ..producto_ingrediente import ProductoIngrediente
 from ..Ingrediente.models import Ingrediente
@@ -7,13 +8,9 @@ from ..Categoria.models import Categoria
 from .models import Producto
 
 
-class ProductoRepository:
+class ProductoRepository(BaseRepository[Producto]):
     def __init__(self, session: Session):
-        self.session = session
-
-    def add(self, producto: Producto):
-        self.session.add(producto)
-        return producto
+        super().__init__(session, Producto)
 
     def add_categoria_relacion(self, producto_id: int, categoria_id: int, es_principal: bool):
         enlace = ProductoCategoria(
@@ -41,21 +38,6 @@ class ProductoRepository:
         )
         self.session.add(enlace)
         return enlace
-
-    def flush(self):
-        self.session.flush()
-
-    def refresh(self, producto: Producto):
-        self.session.refresh(producto)
-        return producto
-
-    def get_all(self, skip: int = 0, limit: int = 100):
-        statement = select(Producto).where(col(Producto.deleted_at).is_(None)).offset(skip).limit(limit)
-        return self.session.exec(statement).all()
-
-    def get_by_id(self, producto_id: int):
-        statement = select(Producto).where(Producto.id == producto_id, col(Producto.deleted_at).is_(None))
-        return self.session.exec(statement).first()
 
     def get_ingredientes(self, producto_id: int):
         """Devuelve los ingredientes asociados a un producto con datos de la relación."""

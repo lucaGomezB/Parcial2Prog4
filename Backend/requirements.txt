@@ -14,5 +14,5 @@ python-dotenv
 email-validator      # Para EmailStr de Pydantic
 
 # JWT Authentication
-python-jose[cryptography]
+PyJWT
 bcrypt

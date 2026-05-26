@@ -1,5 +1,6 @@
 # router.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Optional
 from sqlmodel import Session
 from core.database import get_session
 from modules.IdentidadYAcceso.Auth.dependencies import require_roles
@@ -10,33 +11,44 @@ router = APIRouter(prefix="/categorias", tags=["Categorías"])
 
 @router.get("/tree", response_model=list[CategoriaTree]) #Obtener las categorias que no tienen padre y no están borradas
 def get_tree(session: Session = Depends(get_session)):
+    """Get the category tree (root categories with nested children). Public endpoint, no auth required."""
     return CategoriaService.get_root_categories(session)
 
 @router.get("/", response_model=list[CategoriaRead]) # Obtener todas las categorias
-def read_categorias(skip: int = 0, limit: int = 100, session: Session = Depends(get_session)):
-    return CategoriaService.get_all(session, skip=skip, limit=limit)
+def read_categorias(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=10000),
+    parent_id: Optional[int] = Query(None, description="Filter by parent category ID"),
+    session: Session = Depends(get_session),
+):
+    """List all categories with pagination and optional parent_id filter. Public endpoint, no auth required."""
+    return CategoriaService.get_all(session, skip=skip, limit=limit, parent_id=parent_id)
 
 @router.get("/{categoria_id}", response_model=CategoriaRead)
 def read_categoria(categoria_id: int, session: Session = Depends(get_session)):
+    """Get a single category by its ID. Public endpoint, no auth required."""
     categoria = CategoriaService.get_by_id(session, categoria_id)
     if not categoria:
         raise HTTPException(status_code=404, detail="No encontrada")
     return categoria
 
-# Endpoints protegidos - requieren ADMIN o STOCK
-@router.post("/", response_model=CategoriaCreate, dependencies=[Depends(require_roles(["ADMIN", "STOCK"]))])
+# Endpoints protegidos - solo ADMIN
+@router.post("/", response_model=CategoriaRead, dependencies=[Depends(require_roles(["ADMIN"]))])
 def create_categoria(data: CategoriaCreate, session: Session = Depends(get_session)):
+    """Create a new category. Requires ADMIN role."""
     return CategoriaService.create(session, data)
 
-@router.patch("/{categoria_id}", response_model=CategoriaUpdate, dependencies=[Depends(require_roles(["ADMIN", "STOCK"]))])
+@router.patch("/{categoria_id}", response_model=CategoriaRead, dependencies=[Depends(require_roles(["ADMIN"]))])
 def update_categoria(categoria_id: int, data: CategoriaUpdate, session: Session = Depends(get_session)):
+    """Update an existing category by ID. Requires ADMIN role."""
     categoria = CategoriaService.update(session, categoria_id, data)
     if not categoria:
         raise HTTPException(status_code=404, detail="No encontrada")
     return categoria
 
-@router.delete("/{categoria_id}", dependencies=[Depends(require_roles(["ADMIN", "STOCK"]))])
+@router.delete("/{categoria_id}", dependencies=[Depends(require_roles(["ADMIN"]))])
 def delete_categoria(categoria_id: int, session: Session = Depends(get_session)):
+    """Soft-delete a category by ID. Requires ADMIN role."""
     obj = CategoriaService.soft_delete(session, categoria_id)
     if not obj:
         raise HTTPException(status_code=404, detail="No encontrada")

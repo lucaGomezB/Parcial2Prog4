@@ -1,19 +1,12 @@
 from sqlmodel import Session, select
 from typing import List, Optional
+from models.base_repository import BaseRepository
 from .models import Pago
 
 
-class PagoRepository:
+class PagoRepository(BaseRepository[Pago]):
     def __init__(self, session: Session):
-        self.session = session
-
-    def add(self, pago: Pago):
-        self.session.add(pago)
-        return pago
-
-    def refresh(self, pago: Pago):
-        self.session.refresh(pago)
-        return pago
+        super().__init__(session, Pago)
 
     def get_by_pedido(self, pedido_id: int) -> List[Pago]:
         statement = select(Pago).where(Pago.pedido_id == pedido_id).order_by(Pago.created_at.desc())

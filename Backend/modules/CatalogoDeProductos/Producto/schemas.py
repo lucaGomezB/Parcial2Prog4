@@ -37,6 +37,7 @@ class ProductoCreate(ProductoBase):
 class ProductoUpdate(ProductoBase):
     nombre: Optional[str] = None
     precio_base: Optional[Decimal] = None
+    stock_cantidad: Optional[int] = None
     disponible: Optional[bool] = None
     categorias_ids: Optional[List[int]] = None
 

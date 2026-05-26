@@ -8,8 +8,9 @@ if TYPE_CHECKING:
     from ..Producto.models import Producto
 
 class IngredienteBase(TimestampModel):
-    nombre: str = Field(index=True, max_length=100)
-    es_alergeno: bool = Field(default=True) #Tiene que ser True para no herir a alguien accidentalmente si se cargó mal inicialmente.
+    nombre: str = Field(unique=True, max_length=100)
+    descripcion: Optional[str] = Field(default=None)
+    es_alergeno: bool = Field(default=False)
 
 class Ingrediente(IngredienteBase, SoftDeleteModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

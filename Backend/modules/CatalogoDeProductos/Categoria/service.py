@@ -1,16 +1,19 @@
 from typing import List, Optional
-from sqlmodel import Session
+from fastapi import HTTPException, status
+from sqlmodel import Session, col, select
 from .models import Categoria
 from .schemas import CategoriaCreate, CategoriaUpdate
 from models.base import get_utc_now
 from ..uow import CatalogoDeProductosUnitOfWork
+from ..Producto.models import Producto
+from ..producto_categoria import ProductoCategoria
 
 
 class CategoriaService:
     @staticmethod
-    def get_all(session: Session, skip: int = 0, limit: int = 100) -> List[Categoria]:
+    def get_all(session: Session, skip: int = 0, limit: int = 100, parent_id: int | None = None) -> List[Categoria]:
         with CatalogoDeProductosUnitOfWork(session) as uow:
-            return uow.categorias.get_all(skip=skip, limit=limit)
+            return uow.categorias.get_all(skip=skip, limit=limit, parent_id=parent_id)
 
     @staticmethod
     def get_by_id(session: Session, categoria_id: int) -> Optional[Categoria]:
@@ -53,6 +56,23 @@ class CategoriaService:
             db_categoria = uow.categorias.get_by_id(categoria_id)
             if not db_categoria:
                 return None
+
+            # Validate no active products are linked to this category
+            stmt = (
+                select(ProductoCategoria)
+                .join(Producto, ProductoCategoria.producto_id == Producto.id)
+                .where(
+                    ProductoCategoria.categoria_id == categoria_id,
+                    col(Producto.deleted_at).is_(None)
+                )
+                .limit(1)
+            )
+            active_link = uow.session.exec(stmt).first()
+            if active_link:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="No se puede eliminar la categoría: tiene productos activos asociados"
+                )
 
             db_categoria.deleted_at = get_utc_now()
             uow.categorias.add(db_categoria)

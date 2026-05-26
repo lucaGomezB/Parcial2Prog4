@@ -1,4 +1,5 @@
 import { useReducer, useEffect, useCallback } from "react";
+import { AxiosError } from "axios";
 import type { Ingrediente, IngredienteCreate } from "../api/ingredientes";
 import { ingredientesApi } from "../api/ingredientes";
 import { exportToExcel } from "../utils/exportExcel";
@@ -99,7 +100,10 @@ export default function IngredientesCRUD() {
       dispatch({ type: "CLOSE_FORM" });
       fetchData();
     } catch (err) {
-      dispatch({ type: "SET_ERROR", payload: (err as Error).message });
+      const msg = err instanceof AxiosError && err.response?.data
+        ? (err.response.data as { detail?: string }).detail ?? (err as Error).message
+        : (err as Error).message;
+      dispatch({ type: "SET_ERROR", payload: msg });
     }
   };
 

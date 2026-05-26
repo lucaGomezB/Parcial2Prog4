@@ -1,5 +1,7 @@
+from decimal import Decimal
 from typing import Optional, TYPE_CHECKING
-from sqlmodel import SQLModel, Field, Relationship
+from sqlmodel import SQLModel, Field, Relationship, Column
+from sqlalchemy import Numeric
 from models.base import TimestampModel
 
 if TYPE_CHECKING:
@@ -16,7 +18,7 @@ class Pago(TimestampModel, table=True):
     mp_status_detail: Optional[str] = Field(default=None, max_length=100)
     external_reference: str = Field(unique=True, max_length=100, nullable=False)
     idempotency_key: str = Field(unique=True, max_length=100, nullable=False)
-    transaction_amount: float = Field(nullable=False)
+    transaction_amount: Decimal = Field(sa_column=Column(Numeric(precision=10, scale=2), nullable=False))
     payment_method_id: Optional[str] = Field(default=None, max_length=50)
 
     # Relationship

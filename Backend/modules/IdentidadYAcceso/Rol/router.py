@@ -11,11 +11,13 @@ router = APIRouter(prefix="/roles", tags=["Roles"])
 
 @router.get("/", response_model=list[RolRead])
 def read_roles(session: Session = Depends(get_session)):
+    """List all roles. Requires authentication (any role)."""
     return service.get_roles(session)
 
 
 @router.get("/{codigo}", response_model=RolRead)
 def read_rol(codigo: str, session: Session = Depends(get_session)):
+    """Get a single role by its code. Requires authentication (any role)."""
     rol = session.get(Rol, codigo)
     if not rol:
         raise HTTPException(status_code=404, detail="Rol no encontrado")
@@ -24,11 +26,13 @@ def read_rol(codigo: str, session: Session = Depends(get_session)):
 
 @router.post("/", response_model=RolRead, dependencies=[Depends(require_roles(["ADMIN"]))])
 def create_rol(data: RolCreate, session: Session = Depends(get_session)):
+    """Create a new role. Requires ADMIN role."""
     return service.create_rol(session, data)
 
 
 @router.patch("/{codigo}", response_model=RolRead, dependencies=[Depends(require_roles(["ADMIN"]))])
 def update_rol(codigo: str, data: RolUpdate, session: Session = Depends(get_session)):
+    """Update an existing role by its code. Requires ADMIN role."""
     rol = service.update_rol(session, codigo, data)
     if not rol:
         raise HTTPException(status_code=404, detail="Rol no encontrado")
@@ -37,6 +41,7 @@ def update_rol(codigo: str, data: RolUpdate, session: Session = Depends(get_sess
 
 @router.delete("/{codigo}", dependencies=[Depends(require_roles(["ADMIN"]))])
 def delete_rol(codigo: str, session: Session = Depends(get_session)):
+    """Delete a role by its code. Requires ADMIN role."""
     if not service.delete_rol(session, codigo):
         raise HTTPException(status_code=404, detail="Rol no encontrado")
     return {"message": "Rol eliminado correctamente"}

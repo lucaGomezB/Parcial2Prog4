@@ -1,16 +1,26 @@
-from typing import Optional
+from decimal import Decimal
+from typing import Optional, List
 from pydantic import BaseModel, model_validator
 from datetime import datetime
 
 
+class DetallePedidoInput(BaseModel):
+    producto_id: int
+    cantidad: int
+    nombre_snapshot: str
+    precio_snapshot: Decimal
+    personalizacion: Optional[List[int]] = None
+
+
 class PedidoCreate(BaseModel):
-    usuario_id: int
+    usuario_id: Optional[int] = None
     direccion_id: Optional[int] = None
     forma_pago_codigo: str
-    subtotal: float
-    descuento: float = 0.00
-    costo_envio: float = 50.00
+    subtotal: Decimal
+    descuento: Decimal = Decimal('0.00')
+    costo_envio: Decimal = Decimal('50.00')
     notas: Optional[str] = None
+    detalles: Optional[List[DetallePedidoInput]] = None
 
     @model_validator(mode="after")
     def validate_total(self):
@@ -26,19 +36,57 @@ class PedidoUpdate(BaseModel):
     notas: Optional[str] = None
 
 
+class DetallePedidoRead(BaseModel):
+    producto_id: int
+    cantidad: int
+    nombre_snapshot: str
+    precio_snapshot: Decimal
+    subtotal_snap: Decimal
+    personalizacion: Optional[List[int]] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UsuarioInfo(BaseModel):
+    id: int
+    nombre: str
+    apellido: str
+    email: str
+
+    class Config:
+        from_attributes = True
+
+
 class PedidoRead(BaseModel):
     id: int
     usuario_id: int
     direccion_id: Optional[int] = None
     estado_codigo: str
     forma_pago_codigo: str
-    subtotal: float
-    descuento: float
-    costo_envio: float
-    total: float
+    subtotal: Decimal
+    descuento: Decimal
+    costo_envio: Decimal
+    total: Decimal
     notas: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    detalles: Optional[List[DetallePedidoRead]] = None
+    usuario: Optional[UsuarioInfo] = None
 
     class Config:
         from_attributes = True
+
+
+class PedidoAvanzarResponse(BaseModel):
+    id: int
+    estado_anterior: str
+    estado_actual: str
+    mensaje: str
+
+
+class PedidoCancelarResponse(BaseModel):
+    id: int
+    estado_anterior: str
+    estado_actual: str
+    mensaje: str

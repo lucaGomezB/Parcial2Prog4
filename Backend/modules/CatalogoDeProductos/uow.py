@@ -18,6 +18,8 @@ class CatalogoDeProductosUnitOfWork:
     def __exit__(self, exc_type, exc, tb):
         if exc_type:
             self.rollback()
+        else:
+            self.commit()
         return False
 
     def commit(self):

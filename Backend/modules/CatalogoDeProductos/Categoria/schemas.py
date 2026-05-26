@@ -8,6 +8,7 @@ class CategoriaCreate(BaseModel):
     nombre: str
     descripcion: Optional[str] = None
     parent_id: Optional[int] = None
+    imagen_url: Optional[str] = None
     orden_display: int = 0
 
 
@@ -15,6 +16,7 @@ class CategoriaUpdate(BaseModel):
     nombre: Optional[str] = None
     descripcion: Optional[str] = None
     parent_id: Optional[int] = None
+    imagen_url: Optional[str] = None
     orden_display: Optional[int] = None
 
 
@@ -25,6 +27,7 @@ class CategoriaRead(BaseModel):
     nombre: str
     descripcion: Optional[str] = None
     parent_id: Optional[int] = None
+    imagen_url: Optional[str] = None
     orden_display: int
 
     class Config:

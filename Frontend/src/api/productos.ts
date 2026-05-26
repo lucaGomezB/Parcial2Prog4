@@ -6,6 +6,7 @@ export interface Producto {
   descripcion: string | null;
   precio_base: number;
   imagenes_url: string[];
+  stock_cantidad: number;
   tiempo_prep_min: number;
   disponible: boolean;
 }
@@ -21,6 +22,7 @@ export interface ProductoCreate {
   nombre: string;
   descripcion?: string | null;
   precio_base?: number;
+  stock_cantidad?: number;
   imagenes_url?: string[];
   tiempo_prep_min?: number;
   disponible?: boolean;
@@ -33,6 +35,7 @@ export interface ProductoUpdate {
   nombre?: string | null;
   descripcion?: string | null;
   precio_base?: number | null;
+  stock_cantidad?: number | null;
   disponible?: boolean | null;
   categorias_ids?: number[] | null;
 }

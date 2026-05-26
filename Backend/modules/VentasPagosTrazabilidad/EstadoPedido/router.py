@@ -11,11 +11,13 @@ router = APIRouter(prefix="/estados-pedido", tags=["Estados de Pedido"])
 
 @router.get("/", response_model=List[EstadoPedidoRead])
 def read_all(session: Session = Depends(get_session)):
+    """List all order statuses. Public endpoint, no auth required."""
     return EstadoPedidoService.get_all(session)
 
 
 @router.get("/{codigo}", response_model=EstadoPedidoRead)
 def read_one(codigo: str, session: Session = Depends(get_session)):
+    """Get a single order status by its code. Public endpoint, no auth required."""
     obj = EstadoPedidoService.get_by_codigo(session, codigo)
     if not obj:
         raise HTTPException(status_code=404, detail="Estado no encontrado")
@@ -25,12 +27,14 @@ def read_one(codigo: str, session: Session = Depends(get_session)):
 @router.post("/", response_model=EstadoPedidoRead, status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(require_roles(["ADMIN"]))])
 def create(data: EstadoPedidoCreate, session: Session = Depends(get_session)):
+    """Create a new order status. Requires ADMIN role."""
     return EstadoPedidoService.create(session, data)
 
 
 @router.patch("/{codigo}", response_model=EstadoPedidoRead,
               dependencies=[Depends(require_roles(["ADMIN"]))])
 def update(codigo: str, data: EstadoPedidoUpdate, session: Session = Depends(get_session)):
+    """Update an existing order status by its code. Requires ADMIN role."""
     obj = EstadoPedidoService.update(session, codigo, data)
     if not obj:
         raise HTTPException(status_code=404, detail="Estado no encontrado")
@@ -40,6 +44,7 @@ def update(codigo: str, data: EstadoPedidoUpdate, session: Session = Depends(get
 @router.delete("/{codigo}", status_code=status.HTTP_204_NO_CONTENT,
                dependencies=[Depends(require_roles(["ADMIN"]))])
 def delete(codigo: str, session: Session = Depends(get_session)):
+    """Delete an order status by its code. Requires ADMIN role."""
     if not EstadoPedidoService.delete(session, codigo):
         raise HTTPException(status_code=404, detail="Estado no encontrado")
     return None

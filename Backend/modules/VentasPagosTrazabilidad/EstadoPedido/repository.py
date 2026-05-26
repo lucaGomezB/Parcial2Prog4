@@ -1,14 +1,11 @@
 from sqlmodel import Session, select
+from models.base_repository import BaseRepository
 from .models import EstadoPedido
 
 
-class EstadoPedidoRepository:
+class EstadoPedidoRepository(BaseRepository[EstadoPedido]):
     def __init__(self, session: Session):
-        self.session = session
-
-    def add(self, estado: EstadoPedido):
-        self.session.add(estado)
-        return estado
+        super().__init__(session, EstadoPedido)
 
     def get_all(self):
         statement = select(EstadoPedido).order_by(EstadoPedido.orden)

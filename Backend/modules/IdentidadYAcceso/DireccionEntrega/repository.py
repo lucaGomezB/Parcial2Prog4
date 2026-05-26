@@ -1,22 +1,12 @@
 from sqlmodel import Session, col, select
 
+from models.base_repository import BaseRepository
 from .models import DireccionEntrega
 
 
-class DireccionEntregaRepository:
+class DireccionEntregaRepository(BaseRepository[DireccionEntrega]):
     def __init__(self, session: Session):
-        self.session = session
-
-    def add(self, direccion: DireccionEntrega):
-        self.session.add(direccion)
-        return direccion
-
-    def flush(self):
-        self.session.flush()
-
-    def refresh(self, direccion: DireccionEntrega):
-        self.session.refresh(direccion)
-        return direccion
+        super().__init__(session, DireccionEntrega)
 
     def get_by_id(self, direccion_id: int) -> DireccionEntrega | None:
         statement = (

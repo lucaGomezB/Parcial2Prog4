@@ -15,6 +15,7 @@ interface UserInfo {
   apellido: string;
   email: string;
   celular?: string | null;
+  roles: string[];
 }
 
 interface RefreshResponse {
@@ -32,7 +33,7 @@ const apiClient = axios.create({
 });
 
 // ── Token Management (solo access_token en localStorage) ──
-function getToken(): TokenInfo | null {
+export function getToken(): TokenInfo | null {
   const tokenData = localStorage.getItem("authToken");
   if (!tokenData) return null;
   try {
@@ -75,6 +76,11 @@ export function getUserInfo(): UserInfo | null {
   } catch {
     return null;
   }
+}
+
+export function getUserRoles(): string[] {
+  const user = getUserInfo();
+  return user?.roles ?? [];
 }
 
 // ── Request Interceptor (adds Bearer token) ──

@@ -7,9 +7,10 @@ if TYPE_CHECKING:
     from ..Producto.models import Producto # Esto evita el círculo en ejecución
 
 class CategoriaBase(TimestampModel):
-    nombre: str = Field(index=True, max_length=100)
+    nombre: str = Field(unique=True, max_length=100)
     descripcion: Optional[str] = None
     parent_id: Optional[int] = Field(default=None, foreign_key="categoria.id") # El parent_id es opcional (las categorías raíz no tienen padre)
+    imagen_url: Optional[str] = Field(default=None)
     orden_display: int = 0
 
 class Categoria(CategoriaBase, SoftDeleteModel, table=True):

@@ -1,14 +1,11 @@
 from sqlmodel import Session, select
+from models.base_repository import BaseRepository
 from .models import FormaPago
 
 
-class FormaPagoRepository:
+class FormaPagoRepository(BaseRepository[FormaPago]):
     def __init__(self, session: Session):
-        self.session = session
-
-    def add(self, forma_pago: FormaPago):
-        self.session.add(forma_pago)
-        return forma_pago
+        super().__init__(session, FormaPago)
 
     def get_all(self, only_habilitados: bool = False):
         statement = select(FormaPago)

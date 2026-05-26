@@ -1,4 +1,5 @@
-from typing import Optional
+from decimal import Decimal
+from typing import Optional, List
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -7,8 +8,8 @@ class DetallePedidoCreate(BaseModel):
     producto_id: int
     cantidad: int
     nombre_snapshot: str
-    precio_snapshot: float
-    personalizacion: Optional[str] = None  # JSON array string like "[1,2,3]"
+    precio_snapshot: Decimal
+    personalizacion: Optional[List[int]] = None
 
 
 class DetallePedidoRead(BaseModel):
@@ -16,9 +17,9 @@ class DetallePedidoRead(BaseModel):
     producto_id: int
     cantidad: int
     nombre_snapshot: str
-    precio_snapshot: float
-    subtotal_snap: float
-    personalizacion: Optional[str] = None
+    precio_snapshot: Decimal
+    subtotal_snap: Decimal
+    personalizacion: Optional[List[int]] = None
     created_at: datetime
 
     class Config:

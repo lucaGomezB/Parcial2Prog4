@@ -3,49 +3,46 @@ import { useState, useEffect } from 'react'
 import CategoriasCRUD from './pages/CategoriasCRUD'
 import IngredientesCRUD from './pages/IngredientesCRUD'
 import ProductosCRUD from './pages/ProductosCRUD'
+import Carrito from './pages/Carrito'
+import PedidosPage from './pages/PedidosPage'
+import DireccionesPage from './pages/DireccionesPage'
+import AdminUsuariosPage from './pages/AdminUsuariosPage'
+import SessionTimeoutModal from './components/SessionTimeoutModal'
 import Login from './pages/LoginConceptual'
-import { clearAuth, getAccessToken, apiFetch } from './api/client'
+import { clearAuth, getAccessToken, apiFetch, getUserInfo } from './api/client'
+import { getItemCount } from './utils/carrito'
+
+/* ── Helpers ── */
+function hasRole(roles: string[], ...allowed: string[]) {
+  return allowed.some((r) => roles.includes(r));
+}
 
 function App() {
-  const [userRole, setUserRole] = useState<'admin' | 'guest' | null>(null)
+  const [userRoles, setUserRoles] = useState<string[] | null>(null)
   const [verifying, setVerifying] = useState(true)
   const navigate = useNavigate()
 
   useEffect(() => {
     async function checkAuth() {
-      // Migrar vieja autenticacion si existe
-      if (localStorage.getItem('isAuthenticated') === 'true' && !localStorage.getItem('userRole')) {
-        localStorage.setItem('userRole', 'admin')
-        localStorage.removeItem('isAuthenticated')
-      }
-
-      const role = localStorage.getItem('userRole') as 'admin' | 'guest' | null
       const token = getAccessToken()
 
-      if (role === 'admin' && !token) {
-        // Alguien manipulo localStorage: intento de guest a admin sin token
+      if (!token) {
+        // Sin token → invitado
+        setUserRoles([])
+        setVerifying(false)
+        return
+      }
+
+      // Hay token → verificar contra backend
+      try {
+        await apiFetch('/auth/me')
+        const user = getUserInfo()
+        setUserRoles(user?.roles ?? [])
+      } catch {
+        // Token expirado o inválido
         clearAuth()
-        setUserRole(null)
-        setVerifying(false)
-        return
+        setUserRoles(null)
       }
-
-      if (role === 'admin' && token) {
-        // Verificar que el token todavia sea valido contra el backend
-        try {
-          await apiFetch('/auth/me')
-          setUserRole('admin')
-        } catch {
-          // Token expirado o invalido -> limpiar y pedir login
-          clearAuth()
-          setUserRole(null)
-        }
-        setVerifying(false)
-        return
-      }
-
-      // guest o sin rol -> dejar como esta
-      setUserRole(role ?? null)
       setVerifying(false)
     }
 
@@ -53,14 +50,13 @@ function App() {
   }, [])
 
   const handleLogout = async () => {
-    // Revocar refresh token en el backend + limpiar cookie
     try {
       await apiFetch('/auth/logout', { method: 'POST' })
     } catch {
       // Si falla, igual limpiamos localmente
     }
     clearAuth()
-    setUserRole(null)
+    setUserRoles(null)
     navigate('/login')
   }
 
@@ -72,32 +68,56 @@ function App() {
     )
   }
 
-  if (!userRole) {
+  if (userRoles === null) {
     return (
       <Routes>
-        <Route path="/login" element={<Login onLogin={(role) => setUserRole(role)} />} />
+        <Route path="/login" element={<Login onLogin={(roles) => setUserRoles(roles)} />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     )
   }
 
-  const isAdmin = userRole === 'admin'
+  const isClient = !hasRole(userRoles, 'ADMIN', 'STOCK', 'PEDIDOS')
+  const canSeeFullNav = hasRole(userRoles, 'ADMIN', 'PEDIDOS')
+  const isAdmin = hasRole(userRoles, 'ADMIN')
 
-  const navItems = isAdmin 
-    ? [
-        { to: '/categorias', label: 'Categorías' },
-        { to: '/ingredientes', label: 'Ingredientes' },
-        { to: '/productos', label: 'Productos' },
-      ]
-    : [
-        { to: '/productos', label: 'Menú' }
-      ]
+  const cartCount = getItemCount()
+  const hasGestorRole = hasRole(userRoles, 'ADMIN', 'PEDIDOS')
+
+  let navItems: { to: string; label: string }[];
+  if (isClient) {
+    navItems = [
+      { to: '/productos', label: 'Menú' },
+      { to: '/pedidos', label: 'Mis Pedidos' },
+      { to: '/direcciones', label: 'Direcciones' },
+      { to: '/carrito', label: `Carrito${cartCount > 0 ? ` (${cartCount})` : ''}` },
+    ];
+  } else if (canSeeFullNav) {
+    navItems = [
+      { to: '/categorias', label: 'Categorías' },
+      { to: '/ingredientes', label: 'Ingredientes' },
+      { to: '/productos', label: 'Productos' },
+      { to: '/pedidos', label: 'Pedidos' },
+      { to: '/direcciones', label: 'Direcciones' },
+      { to: '/carrito', label: `Carrito${cartCount > 0 ? ` (${cartCount})` : ''}` },
+    ];
+    if (isAdmin) {
+      navItems.splice(0, 0, { to: '/admin/usuarios', label: 'Usuarios' });
+    }
+  } else {
+    navItems = [
+      { to: '/productos', label: 'Productos' },
+      { to: '/pedidos', label: 'Pedidos' },
+      { to: '/direcciones', label: 'Direcciones' },
+      { to: '/carrito', label: `Carrito${cartCount > 0 ? ` (${cartCount})` : ''}` },
+    ];
+  }
 
   return (
     <div className="min-h-screen bg-white">
       <nav className="bg-gray-800 text-white px-4 py-3 flex justify-between items-center">
         <div className="flex gap-4 items-center">
-          <span className="font-bold mr-4">{isAdmin ? 'Catálogo de Productos' : 'Menú'}</span>
+          <span className="font-bold mr-4">{isClient ? 'Menú' : 'Catálogo de Productos'}</span>
           {navItems.map((item) => (
             <NavLink
               key={item.to}
@@ -120,23 +140,40 @@ function App() {
 
       <main>
         <Routes>
-          {isAdmin ? (
-            <>
-              <Route path="/" element={<Navigate to="/categorias" replace />} />
-              <Route path="/categorias" element={<CategoriasCRUD />} />
-              <Route path="/ingredientes" element={<IngredientesCRUD />} />
-              <Route path="/productos" element={<ProductosCRUD />} />
-              <Route path="*" element={<Navigate to="/categorias" replace />} />
-            </>
-          ) : (
-            <>
-              <Route path="/" element={<Navigate to="/productos" replace />} />
-              <Route path="/productos" element={<ProductosCRUD readOnly={true} />} />
-              <Route path="*" element={<Navigate to="/productos" replace />} />
-            </>
-          )}
+          {(() => {
+            // Determinar el role para ProductosCRUD según los roles del usuario
+            let productRole: 'admin' | 'stock' | 'pedidos' | 'client';
+            if (isClient) productRole = 'client';
+            else if (hasRole(userRoles, 'ADMIN')) productRole = 'admin';
+            else if (hasRole(userRoles, 'STOCK')) productRole = 'stock';
+            else productRole = 'pedidos';
+
+            return isClient ? (
+              <>
+                <Route path="/" element={<Navigate to="/productos" replace />} />
+                <Route path="/productos" element={<ProductosCRUD role={productRole} />} />
+                <Route path="/carrito" element={<Carrito />} />
+                <Route path="/pedidos" element={<PedidosPage />} />
+                <Route path="/direcciones" element={<DireccionesPage />} />
+                <Route path="*" element={<Navigate to="/productos" replace />} />
+              </>
+            ) : (
+              <>
+                <Route path="/" element={<Navigate to="/productos" replace />} />
+                {canSeeFullNav && <Route path="/categorias" element={<CategoriasCRUD />} />}
+                {canSeeFullNav && <Route path="/ingredientes" element={<IngredientesCRUD />} />}
+                <Route path="/admin/usuarios" element={<AdminUsuariosPage />} />
+                <Route path="/productos" element={<ProductosCRUD role={productRole} />} />
+                <Route path="/carrito" element={<Carrito />} />
+                <Route path="/pedidos" element={<PedidosPage />} />
+                <Route path="/direcciones" element={<DireccionesPage />} />
+                <Route path="*" element={<Navigate to="/productos" replace />} />
+              </>
+            );
+          })()}
         </Routes>
       </main>
+      <SessionTimeoutModal />
     </div>
   )
 }

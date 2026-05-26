@@ -1,5 +1,7 @@
 from typing import Optional, List, TYPE_CHECKING
-from sqlmodel import SQLModel, Field, Relationship
+from decimal import Decimal
+from sqlalchemy import Numeric
+from sqlmodel import SQLModel, Field, Relationship, Column
 from models.base import TimestampModel, SoftDeleteModel
 
 # Same-package imports — safe, no circular dependency
@@ -20,10 +22,10 @@ class PedidoBase(TimestampModel):
     direccion_id: Optional[int] = Field(default=None, foreign_key="direcciones_entrega.id", ondelete="SET NULL")
     estado_codigo: str = Field(foreign_key="estadopedido.codigo", nullable=False)
     forma_pago_codigo: str = Field(foreign_key="formapago.codigo", nullable=False)
-    subtotal: float = Field(nullable=False)
-    descuento: float = Field(default=0.00, nullable=False)
-    costo_envio: float = Field(default=50.00, nullable=False)
-    total: float = Field(nullable=False)
+    subtotal: Decimal = Field(sa_column=Column(Numeric(precision=10, scale=2), nullable=False))
+    descuento: Decimal = Field(default=Decimal('0.00'), sa_column=Column(Numeric(precision=10, scale=2)))
+    costo_envio: Decimal = Field(default=Decimal('50.00'), sa_column=Column(Numeric(precision=10, scale=2)))
+    total: Decimal = Field(sa_column=Column(Numeric(precision=10, scale=2), nullable=False))
     notas: Optional[str] = Field(default=None)
 
 

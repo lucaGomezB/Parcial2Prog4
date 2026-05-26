@@ -1,5 +1,7 @@
 from sqlmodel import Session
 from typing import List, Optional
+from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from .models import Ingrediente
 from .schemas import IngredienteCreate, IngredienteUpdate
 from models.base import get_utc_now
@@ -11,7 +13,13 @@ class IngredienteService:
         with CatalogoDeProductosUnitOfWork(session) as uow:
             db_ingrediente = Ingrediente.model_validate(data)
             uow.ingredientes.add(db_ingrediente)
-            uow.commit()
+            try:
+                uow.commit()
+            except IntegrityError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Ya existe un ingrediente con ese nombre. No se puede crear duplicados.",
+                )
             uow.ingredientes.refresh(db_ingrediente)
             return db_ingrediente
 

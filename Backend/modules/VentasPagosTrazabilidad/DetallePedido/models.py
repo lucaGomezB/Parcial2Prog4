@@ -1,5 +1,7 @@
-from typing import Optional, TYPE_CHECKING
-from sqlmodel import SQLModel, Field, Relationship
+from typing import Optional, List, TYPE_CHECKING
+from sqlmodel import SQLModel, Field, Relationship, Column
+from decimal import Decimal
+from sqlalchemy import ARRAY, Integer, Numeric
 from datetime import datetime, timezone
 
 if TYPE_CHECKING:
@@ -23,9 +25,11 @@ class DetallePedido(SQLModel, table=True):
     )
     cantidad: int = Field(nullable=False)  # SMALLINT in DB
     nombre_snapshot: str = Field(max_length=200, nullable=False)
-    precio_snapshot: float = Field(nullable=False)
-    subtotal_snap: float = Field(nullable=False)
-    personalizacion: Optional[str] = Field(default=None)  # JSON string representing INTEGER[]
+    precio_snapshot: Decimal = Field(sa_column=Column(Numeric(precision=10, scale=2), nullable=False))
+    subtotal_snap: Decimal = Field(sa_column=Column(Numeric(precision=10, scale=2), nullable=False))
+    personalizacion: Optional[List[int]] = Field(
+        default=None, sa_column=Column(ARRAY(Integer))
+    )
 
     # Only created_at - no updated_at (immutable row)
     created_at: datetime = Field(default_factory=get_utc_now, nullable=False)

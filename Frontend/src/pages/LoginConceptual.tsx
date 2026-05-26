@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiFetch, setToken, setUserInfo, clearAuth } from "../api/client";
+import { apiFetch, setToken, setUserInfo, clearAuth, getUserRoles } from "../api/client";
 
 interface LoginResponse {
   access_token: string;
@@ -14,9 +14,10 @@ interface UserInfo {
   apellido: string;
   email: string;
   celular?: string | null;
+  roles: string[];
 }
 
-export default function Login({ onLogin }: { onLogin: (role: 'admin' | 'guest') => void }) {
+export default function Login({ onLogin }: { onLogin: (roles: string[]) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -38,14 +39,11 @@ export default function Login({ onLogin }: { onLogin: (role: 'admin' | 'guest') 
       // Store access_token (refresh_token se guarda como httpOnly cookie en el backend)
       setToken(response.access_token, response.expires_in);
 
-      // Get user info
+      // Get user info + roles
       const userInfo = await apiFetch<UserInfo>("/auth/me");
       setUserInfo(userInfo);
 
-      // Admin role
-      localStorage.setItem("userRole", "admin");
-
-      onLogin('admin');
+      onLogin(userInfo.roles);
       navigate("/");
     } catch (err: unknown) {
       console.error("Login error:", err);
@@ -71,8 +69,7 @@ export default function Login({ onLogin }: { onLogin: (role: 'admin' | 'guest') 
 
   const handleGuestLogin = () => {
     clearAuth();
-    localStorage.setItem("userRole", "guest");
-    onLogin('guest');
+    onLogin([]);
     navigate("/productos");
   };
 
