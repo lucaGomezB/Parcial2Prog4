@@ -123,7 +123,7 @@ apiClient.interceptors.response.use(
     // Don't try to refresh if the failing request IS the refresh endpoint
     if (originalRequest.url?.includes("/auth/refresh")) {
       clearAuth();
-      window.location.href = "/login";
+      window.dispatchEvent(new CustomEvent("session:expired"));
       return Promise.reject(error);
     }
 
@@ -161,7 +161,7 @@ apiClient.interceptors.response.use(
     } catch (refreshError) {
       processQueue(refreshError, null);
       clearAuth();
-      window.location.href = "/login";
+      window.dispatchEvent(new CustomEvent("session:expired"));
       return Promise.reject(refreshError);
     } finally {
       isRefreshing = false;

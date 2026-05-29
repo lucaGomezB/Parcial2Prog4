@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { usuariosApi, type Usuario, type UsuarioUpdate } from "../api/usuarios";
+import { usuariosApi, type Usuario, type UsuarioCreate, type UsuarioUpdate } from "../api/usuarios";
 import { apiFetch, getUserRoles } from "../api/client";
 
 const PAGE_SIZE = 10;
@@ -158,6 +158,201 @@ function EditarUsuarioModal({
   );
 }
 
+/* ── Modal de creación ── */
+function CrearUsuarioModal({
+  todosRoles,
+  onClose,
+  onSave,
+}: {
+  todosRoles: RolOption[];
+  onClose: () => void;
+  onSave: (data: UsuarioCreate) => Promise<void>;
+}) {
+  const [nombre, setNombre] = useState("");
+  const [apellido, setApellido] = useState("");
+  const [email, setEmail] = useState("");
+  const [celular, setCelular] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [rolesSel, setRolesSel] = useState<string[]>(["CLIENT"]);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggleRol = (codigo: string) => {
+    setRolesSel((prev) =>
+      prev.includes(codigo)
+        ? prev.filter((c) => c !== codigo)
+        : [...prev, codigo]
+    );
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (password.length < 6) {
+      setError("La contraseña debe tener al menos 6 caracteres");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Las contraseñas no coinciden");
+      return;
+    }
+
+    setGuardando(true);
+    try {
+      await onSave({
+        nombre: nombre.trim(),
+        apellido: apellido.trim(),
+        email: email.trim(),
+        celular: celular.trim() || null,
+        password,
+        roles_codigos: rolesSel,
+      });
+      onClose();
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded p-6 w-full max-w-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-bold mb-4">Crear Usuario</h2>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          {error && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded text-sm">
+              {error}
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Nombre
+              </label>
+              <input
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                required
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Apellido
+              </label>
+              <input
+                value={apellido}
+                onChange={(e) => setApellido(e.target.value)}
+                required
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Email
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Celular
+            </label>
+            <input
+              value={celular}
+              onChange={(e) => setCelular(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Contraseña
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={6}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Confirmar contraseña
+              </label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Roles
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {todosRoles.map((rol) => (
+                <button
+                  key={rol.codigo}
+                  type="button"
+                  onClick={() => toggleRol(rol.codigo)}
+                  className={`px-3 py-1 rounded text-sm border cursor-pointer transition-colors ${
+                    rolesSel.includes(rol.codigo)
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+                  }`}
+                >
+                  {rol.nombre}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-100 cursor-pointer"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={guardando}
+              className="px-4 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 cursor-pointer"
+            >
+              {guardando ? "Creando..." : "Crear usuario"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 /* ── Página principal ── */
 export default function AdminUsuariosPage() {
   const navigate = useNavigate();
@@ -169,6 +364,7 @@ export default function AdminUsuariosPage() {
   const [rolFiltro, setRolFiltro] = useState("");
   const [todosRoles, setTodosRoles] = useState<RolOption[]>([]);
   const [editando, setEditando] = useState<Usuario | null>(null);
+  const [creando, setCreando] = useState(false);
 
   // Guard: solo ADMIN puede ver esta página
   const userRoles = getUserRoles();
@@ -220,6 +416,13 @@ export default function AdminUsuariosPage() {
     loadUsuarios();
   };
 
+  const handleCreate = async (data: UsuarioCreate) => {
+    await usuariosApi.create(data);
+    mostrarMensaje("Usuario creado exitosamente");
+    setCreando(false);
+    loadUsuarios();
+  };
+
   const handleDelete = async (id: number) => {
     if (!confirm("¿Estás seguro de eliminar este usuario?")) return;
     try {
@@ -243,6 +446,12 @@ export default function AdminUsuariosPage() {
     <div className="p-4">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Gestión de Usuarios</h1>
+        <button
+          onClick={() => setCreando(true)}
+          className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 cursor-pointer"
+        >
+          + Crear Usuario
+        </button>
       </div>
 
       {mensaje && (
@@ -359,6 +568,15 @@ export default function AdminUsuariosPage() {
           Siguiente →
         </button>
       </div>
+
+      {/* Modal creación */}
+      {creando && (
+        <CrearUsuarioModal
+          todosRoles={todosRoles}
+          onClose={() => setCreando(false)}
+          onSave={handleCreate}
+        />
+      )}
 
       {/* Modal edición */}
       {editando && (

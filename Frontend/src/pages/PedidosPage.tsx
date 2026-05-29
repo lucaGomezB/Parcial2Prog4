@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
-import { pedidosApi, type Pedido, type DetallePedido } from "../api/pedidos";
+import { pedidosApi, type Pedido, type DetallePedido, type StockInsuficienteDetalle } from "../api/pedidos";
 import { getUserRoles } from "../api/client";
+import { AxiosError } from "axios";
 
 const ESTADOS_COLORES: Record<string, string> = {
   PENDIENTE: "bg-yellow-100 text-yellow-800",
@@ -44,6 +45,7 @@ function DetallesPopup({ pedido, detalles, onClose }: {
         <table className="w-full border-collapse border mb-4">
           <thead><tr className="bg-gray-200">
             <th className="border p-2 text-left">Producto</th>
+            <th className="border p-2 text-left">Medida</th>
             <th className="border p-2 text-right">Cantidad</th>
             <th className="border p-2 text-right">Precio Unit.</th>
             <th className="border p-2 text-right">Subtotal</th>
@@ -52,6 +54,7 @@ function DetallesPopup({ pedido, detalles, onClose }: {
             {detalles.map((d, i) => (
               <tr key={i} className="hover:bg-gray-100 border-b">
                 <td className="p-2">{d.nombre_snapshot}</td>
+                <td className="p-2 text-sm">{d.medida_snapshot ?? "-"}</td>
                 <td className="p-2 text-right">{d.cantidad}</td>
                 <td className="p-2 text-right">${parseFloat(d.precio_snapshot).toFixed(2)}</td>
                 <td className="p-2 text-right font-mono font-semibold">${parseFloat(d.subtotal_snap).toFixed(2)}</td>
@@ -61,6 +64,132 @@ function DetallesPopup({ pedido, detalles, onClose }: {
         </table>
         <div className="text-right text-lg font-bold">
           Total: <span className="text-blue-700">${parseFloat(pedido.total).toFixed(2)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Popup de resolución de stock insuficiente ── */
+function StockModal({ pedido, detalles, onResolve, onCancel }: {
+  pedido: Pedido;
+  detalles: StockInsuficienteDetalle[];
+  onResolve: (resoluciones: Record<number, number>) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [resoluciones, setResoluciones] = useState<Record<number, number>>(() => {
+    const init: Record<number, number> = {};
+    for (const d of detalles) {
+      init[d.producto_id] = d.stock_disponible;
+    }
+    return init;
+  });
+  const [resolving, setResolving] = useState(false);
+
+  const handleConfirmar = async () => {
+    setResolving(true);
+    try {
+      await onResolve(resoluciones);
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onCancel}>
+      <div className="bg-white rounded p-6 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-bold text-amber-800">Stock Insuficiente</h2>
+          <button onClick={onCancel} className="text-gray-500 text-xl cursor-pointer">✕</button>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          El pedido <strong>#{pedido.id}</strong> tiene productos con stock insuficiente.
+          Ajustá las cantidades o marcá para eliminar los que no tengan stock.
+        </p>
+
+        <table className="w-full border-collapse border mb-4">
+          <thead><tr className="bg-gray-200">
+            <th className="border p-2 text-left">Producto</th>
+            <th className="border p-2 text-left">Medida</th>
+            <th className="border p-2 text-right">Pedido</th>
+            <th className="border p-2 text-right">Stock</th>
+            <th className="border p-2 text-right">Cantidad</th>
+          </tr></thead>
+          <tbody>
+            {detalles.map((d) => {
+              const cant = resoluciones[d.producto_id] ?? 0;
+              const eliminar = cant <= 0;
+              return (
+                <tr key={d.producto_id} className={`border-b ${eliminar ? 'bg-red-50 opacity-60' : ''}`}>
+                  <td className="p-2">{d.nombre_producto}</td>
+                  <td className="p-2 text-sm">{d.medida ?? "-"}</td>
+                  <td className="p-2 text-right text-red-600">{d.cantidad_solicitada}</td>
+                  <td className="p-2 text-right text-green-700">{d.stock_disponible}</td>
+                  <td className="p-2 text-right">
+                    {eliminar ? (
+                      <span className="text-xs text-red-500 font-medium">Eliminado</span>
+                    ) : (
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setResoluciones((prev) => {
+                            const next = { ...prev, [d.producto_id]: Math.max(0, (prev[d.producto_id] ?? d.stock_disponible) - 1) };
+                            return next;
+                          })}
+                          disabled={cant <= 1}
+                          className="border border-gray-400 bg-white text-gray-700 hover:bg-gray-100 text-sm w-6 h-6 flex items-center justify-center rounded cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                        >−</button>
+                        <span className="w-6 text-center font-mono text-sm">{cant}</span>
+                        <button
+                          type="button"
+                          onClick={() => setResoluciones((prev) => ({ ...prev, [d.producto_id]: Math.min(d.stock_disponible, (prev[d.producto_id] ?? d.stock_disponible) + 1) }))}
+                          disabled={cant >= d.stock_disponible}
+                          className="border border-gray-400 bg-white text-gray-700 hover:bg-gray-100 text-sm w-6 h-6 flex items-center justify-center rounded cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                        >+</button>
+                      </div>
+                    )}
+                  </td>
+                  <td className="p-2 text-center">
+                    {d.stock_disponible === 0 ? (
+                      <span className="text-xs text-gray-400">Sin stock</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setResoluciones((prev) => {
+                          if ((prev[d.producto_id] ?? d.stock_disponible) > 0) {
+                            return { ...prev, [d.producto_id]: 0 };
+                          }
+                          return { ...prev, [d.producto_id]: d.stock_disponible };
+                        })}
+                        className={`text-xs px-2 py-0.5 rounded cursor-pointer ${eliminar ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
+                      >
+                        {eliminar ? "Restaurar" : "Eliminar"}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={resolving}
+            className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-100 cursor-pointer disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirmar}
+            disabled={resolving}
+            className="px-4 py-2 text-sm bg-amber-600 text-white rounded hover:bg-amber-700 cursor-pointer disabled:opacity-50"
+          >
+            {resolving ? "Aplicando..." : "Aplicar cambios y confirmar"}
+          </button>
         </div>
       </div>
     </div>
@@ -77,6 +206,7 @@ export default function PedidosPage() {
   const [detailPopup, setDetailPopup] = useState<Pedido | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [modo, setModo] = useState<ModoVista>("activos");
+  const [stockIssue, setStockIssue] = useState<{ pedido: Pedido; detalles: StockInsuficienteDetalle[] } | null>(null);
 
   const roles = getUserRoles();
   const esGestor = roles.includes("ADMIN") || roles.includes("PEDIDOS");
@@ -110,6 +240,36 @@ export default function PedidosPage() {
   const handleAvanzar = async (id: number) => {
     try {
       const res = await pedidosApi.avanzar(id);
+      setMensaje(res.mensaje);
+      loadPedidos();
+      setTimeout(() => setMensaje(null), 3000);
+    } catch (e) {
+      if (e instanceof AxiosError && e.response?.status === 409 && e.response.data) {
+        const body = e.response.data as { detail?: { error: string; mensaje: string; detalles: StockInsuficienteDetalle[] } };
+        if (body.detail?.error === "stock_insuficiente") {
+          const pedido = pedidos.find(p => p.id === id);
+          if (pedido) {
+            setStockIssue({ pedido, detalles: body.detail.detalles });
+            return;
+          }
+        }
+      }
+      setError((e as Error).message);
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  const handleResolverStock = async (resoluciones: Record<number, number>) => {
+    if (!stockIssue) return;
+    try {
+      // Apply each resolution
+      for (const [productoIdStr, cantidad] of Object.entries(resoluciones)) {
+        const productoId = Number(productoIdStr);
+        await pedidosApi.actualizarDetalle(stockIssue.pedido.id, productoId, cantidad);
+      }
+      // Retry confirmation
+      const res = await pedidosApi.avanzar(stockIssue.pedido.id);
+      setStockIssue(null);
       setMensaje(res.mensaje);
       loadPedidos();
       setTimeout(() => setMensaje(null), 3000);
@@ -264,6 +424,16 @@ export default function PedidosPage() {
           pedido={detailPopup}
           detalles={detailPopup.detalles ?? []}
           onClose={() => setDetailPopup(null)}
+        />
+      )}
+
+      {/* Popup de resolución de stock */}
+      {stockIssue && (
+        <StockModal
+          pedido={stockIssue.pedido}
+          detalles={stockIssue.detalles}
+          onResolve={handleResolverStock}
+          onCancel={() => setStockIssue(null)}
         />
       )}
     </div>

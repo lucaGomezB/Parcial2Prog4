@@ -4,7 +4,7 @@ from typing import List
 from core.database import get_session
 from modules.IdentidadYAcceso.Auth.dependencies import require_roles
 from .service import ProductoService
-from .schemas import ProductoRead, ProductoCreate, ProductoUpdate, ProductoIngredienteRead, ProductoCategoriaRead, IngredienteAsignado, CategoriaAsignada
+from .schemas import ProductoRead, ProductoCreate, ProductoUpdate, ProductoMedidaRead, ProductoMedidaCreate, ProductoIngredienteRead, ProductoCategoriaRead, IngredienteAsignado, CategoriaAsignada
 
 router = APIRouter(prefix="/productos", tags=["Productos"])
 
@@ -85,4 +85,34 @@ def remove_producto_categoria(producto_id: int, categoria_id: int, session: Sess
     """Remove a category assignment from a product. Requires ADMIN or STOCK role."""
     if not ProductoService.remove_categoria(session, producto_id, categoria_id):
         raise HTTPException(status_code=404, detail="Relación no encontrada")
+    return None
+
+# --- Medidas ---
+
+@router.get("/{producto_id}/medidas", response_model=List[ProductoMedidaRead])
+def listar_medidas(producto_id: int, session: Session = Depends(get_session)):
+    """List all measures for a product. Public endpoint."""
+    return ProductoService.listar_medidas(session, producto_id)
+
+@router.post("/{producto_id}/medidas", response_model=ProductoMedidaRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_roles(["ADMIN", "STOCK"]))])
+def crear_medida(producto_id: int, data: ProductoMedidaCreate, session: Session = Depends(get_session)):
+    """Create a new measure for a product. Requires ADMIN or STOCK role."""
+    result = ProductoService.crear_medida(session, producto_id, data)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    return result
+
+@router.patch("/{producto_id}/medidas/{medida_id}", response_model=ProductoMedidaRead, dependencies=[Depends(require_roles(["ADMIN", "STOCK"]))])
+def actualizar_medida(producto_id: int, medida_id: int, data: ProductoMedidaCreate, session: Session = Depends(get_session)):
+    """Update a measure. Requires ADMIN or STOCK role."""
+    result = ProductoService.actualizar_medida(session, producto_id, medida_id, data)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Medida no encontrada")
+    return result
+
+@router.delete("/{producto_id}/medidas/{medida_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_roles(["ADMIN", "STOCK"]))])
+def eliminar_medida(producto_id: int, medida_id: int, session: Session = Depends(get_session)):
+    """Delete a measure. Requires ADMIN or STOCK role."""
+    if not ProductoService.eliminar_medida(session, producto_id, medida_id):
+        raise HTTPException(status_code=404, detail="Medida no encontrada")
     return None

@@ -10,6 +10,7 @@ class CategoriaCreate(BaseModel):
     parent_id: Optional[int] = None
     imagen_url: Optional[str] = None
     orden_display: int = 0
+    es_primordial: bool = False
 
 
 class CategoriaUpdate(BaseModel):
@@ -18,6 +19,7 @@ class CategoriaUpdate(BaseModel):
     parent_id: Optional[int] = None
     imagen_url: Optional[str] = None
     orden_display: Optional[int] = None
+    es_primordial: Optional[bool] = None
 
 
 # --- ESQUEMAS DE SALIDA (Respuesta de la API) ---
@@ -29,6 +31,7 @@ class CategoriaRead(BaseModel):
     parent_id: Optional[int] = None
     imagen_url: Optional[str] = None
     orden_display: int
+    es_primordial: bool
 
     class Config:
         from_attributes = True

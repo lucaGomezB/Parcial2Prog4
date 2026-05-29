@@ -74,6 +74,13 @@ function CategoryTreeRow({
         </td>
         <td className="p-2 text-sm text-gray-600">{categoria.descripcion ?? "-"}</td>
         <td className="p-2">
+          {categoria.es_primordial ? (
+            <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">Primordial</span>
+          ) : (
+            <span className="text-sm text-gray-400">-</span>
+          )}
+        </td>
+        <td className="p-2">
           <div className="flex gap-1">
             <button onClick={() => onEdit(categoria)}
               className="bg-yellow-500 text-white px-2 py-1 rounded text-xs cursor-pointer hover:bg-yellow-600">Editar</button>
@@ -175,7 +182,7 @@ export default function CategoriasCRUD() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<CategoriaCreate>({
-    nombre: "", descripcion: "", parent_id: null, orden_display: 0,
+    nombre: "", descripcion: "", parent_id: null, orden_display: 0, es_primordial: false,
   });
   const [selectedParentId, setSelectedParentId] = useState<number | null>(null);
   const [selectedParentName, setSelectedParentName] = useState("");
@@ -213,6 +220,7 @@ export default function CategoriasCRUD() {
       descripcion: cat.descripcion ?? "",
       parent_id: cat.parent_id,
       orden_display: cat.orden_display,
+      es_primordial: cat.es_primordial,
     });
     // Find parent name from tree
     const findParent = (nodes: CategoriaTree[]): string => {
@@ -231,7 +239,7 @@ export default function CategoriasCRUD() {
   const handleCreate = () => {
     setEditingId(null);
     setShowForm(true);
-    setForm({ nombre: "", descripcion: "", parent_id: null, orden_display: 0 });
+    setForm({ nombre: "", descripcion: "", parent_id: null, orden_display: 0, es_primordial: false });
     setSelectedParentId(null);
     setSelectedParentName("");
     setShowParentSelector(false);
@@ -240,7 +248,7 @@ export default function CategoriasCRUD() {
   const handleCloseForm = () => {
     setShowForm(false);
     setEditingId(null);
-    setForm({ nombre: "", descripcion: "", parent_id: null, orden_display: 0 });
+    setForm({ nombre: "", descripcion: "", parent_id: null, orden_display: 0, es_primordial: false });
     setSelectedParentId(null);
     setSelectedParentName("");
   };
@@ -322,6 +330,12 @@ export default function CategoriasCRUD() {
               onChange={(e) => setForm({ ...form, orden_display: Number(e.target.value) })}
               className="border px-2 py-1 rounded w-full" />
           </div>
+          <div className="col-span-2 flex items-center gap-2">
+            <label className="text-sm font-medium">Es primordial</label>
+            <input type="checkbox" checked={form.es_primordial ?? false}
+              onChange={(e) => setForm({ ...form, es_primordial: e.target.checked })}
+              className="w-4 h-4 cursor-pointer" />
+          </div>
           <div className="col-span-2 flex gap-2 mt-2">
             <button type="submit" className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer hover:bg-blue-700">
               {editingId ? "Actualizar" : "Crear"}</button>
@@ -352,11 +366,12 @@ export default function CategoriasCRUD() {
           <thead><tr className="bg-gray-200">
             <th className="border p-2 text-left">Nombre</th>
             <th className="border p-2 text-left">Descripción</th>
+            <th className="border p-2 text-left">Primordial</th>
             <th className="border p-2 text-left">Acciones</th>
           </tr></thead>
           <tbody>
             {displayTree.length === 0 ? (
-              <tr><td colSpan={3} className="border p-2 text-center text-gray-500">Sin resultados</td></tr>
+              <tr><td colSpan={4} className="border p-2 text-center text-gray-500">Sin resultados</td></tr>
             ) : (
               displayTree.map((root) => (
                 <CategoryTreeRow

@@ -107,6 +107,35 @@ export default function IngredientesCRUD() {
     }
   };
 
+  const handleExport = async () => {
+    try {
+      // Fetch ALL ingredients (no pagination) for export
+      const allData = await ingredientesApi.getAll(0, 10000);
+
+      // Apply current filter
+      const exportData = allData
+        .filter((i) =>
+          i.nombre.toLowerCase().includes(state.filter.toLowerCase())
+        )
+        .map(({ id, nombre, es_alergeno }) => ({
+          id,
+          nombre,
+          es_alergeno: es_alergeno ? "Sí" : "No",
+        }));
+
+      if (exportData.length === 0) {
+        dispatch({ type: "SET_ERROR", payload: "No hay ingredientes para exportar" });
+        setTimeout(() => dispatch({ type: "SET_ERROR", payload: null }), 3000);
+        return;
+      }
+
+      exportToExcel(exportData, "ingredientes");
+    } catch (e) {
+      dispatch({ type: "SET_ERROR", payload: "Error al exportar: " + (e as Error).message });
+      setTimeout(() => dispatch({ type: "SET_ERROR", payload: null }), 3000);
+    }
+  };
+
   const handleDelete = async (id: number) => {
     if (!confirm("¿Eliminar este ingrediente?")) return;
     try {
@@ -131,9 +160,7 @@ export default function IngredientesCRUD() {
           className="border px-3 py-1 rounded" />
         <button onClick={() => dispatch({ type: "START_CREATE" })}
           className="bg-green-600 text-white px-4 py-1 rounded cursor-pointer">+ Nuevo</button>
-        <button onClick={() => exportToExcel(filtered.map(({ id, nombre, es_alergeno }) => ({
-            id, nombre, es_alergeno: es_alergeno ? "Sí" : "No",
-          })), "ingredientes")}
+        <button onClick={handleExport}
           className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer">Exportar Excel</button>
       </div>
       {state.showForm && (

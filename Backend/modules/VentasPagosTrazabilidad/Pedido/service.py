@@ -9,6 +9,7 @@ from ..uow import VentasPagosTrazabilidadUnitOfWork
 from ..DetallePedido.models import DetallePedido
 from ..HistorialEstadoPedido.models import HistorialEstadoPedido
 from models.base import get_utc_now
+from modules.CatalogoDeProductos.Producto.models import ProductoMedida
 
 ESTADOS_TERMINALES = {"ENTREGADO", "CANCELADO"}
 
@@ -127,6 +128,21 @@ class PedidoService:
             # Crear DetallePedido snapshots si vienen en el create
             if data.detalles:
                 for det in data.detalles:
+                    # Validar medida si se especificó
+                    medida_nombre = None
+                    if det.medida_id is not None:
+                        stmt = select(ProductoMedida).where(
+                            ProductoMedida.id == det.medida_id,
+                            ProductoMedida.producto_id == det.producto_id,
+                        )
+                        medida_db = session.exec(stmt).first()
+                        if not medida_db:
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"Medida ID {det.medida_id} no encontrada para producto {det.producto_id}",
+                            )
+                        medida_nombre = medida_db.nombre
+
                     line_total = det.precio_snapshot * det.cantidad
                     uow.session.add(DetallePedido(
                         pedido_id=db_pedido.id,
@@ -136,6 +152,7 @@ class PedidoService:
                         precio_snapshot=det.precio_snapshot,
                         subtotal_snap=line_total,
                         personalizacion=det.personalizacion,
+                        medida_snapshot=medida_nombre,
                     ))
 
             uow.commit()
@@ -166,6 +183,66 @@ class PedidoService:
                 )
 
             estado_siguiente = TRANSICIONES_VALIDAS[estado_actual]
+
+            # ── Validar stock antes de confirmar ──
+            if estado_siguiente == "CONFIRMADO":
+                from modules.CatalogoDeProductos.Producto.models import Producto
+
+                errores_stock: list[dict] = []
+                for det in db_pedido.detalles:
+                    if det.medida_snapshot:
+                        stmt_med = select(ProductoMedida).where(
+                            ProductoMedida.producto_id == det.producto_id,
+                            ProductoMedida.nombre == det.medida_snapshot,
+                        )
+                        medida = session.exec(stmt_med).first()
+                        stock_disp = medida.stock if medida else 0
+                        if stock_disp < det.cantidad:
+                            errores_stock.append({
+                                "producto_id": det.producto_id,
+                                "nombre_producto": det.nombre_snapshot,
+                                "medida": det.medida_snapshot,
+                                "cantidad_solicitada": det.cantidad,
+                                "stock_disponible": stock_disp,
+                            })
+                    else:
+                        prod = session.get(Producto, det.producto_id)
+                        stock_disp = prod.stock_cantidad if prod else 0
+                        if stock_disp < det.cantidad:
+                            errores_stock.append({
+                                "producto_id": det.producto_id,
+                                "nombre_producto": det.nombre_snapshot,
+                                "medida": None,
+                                "cantidad_solicitada": det.cantidad,
+                                "stock_disponible": stock_disp,
+                            })
+
+                if errores_stock:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail={
+                            "error": "stock_insuficiente",
+                            "mensaje": "Stock insuficiente para confirmar el pedido. Revisá los detalles.",
+                            "detalles": errores_stock,
+                        },
+                    )
+
+                # ── Descontar stock al confirmar pedido ──
+                for det in db_pedido.detalles:
+                    if det.medida_snapshot:
+                        stmt_med = select(ProductoMedida).where(
+                            ProductoMedida.producto_id == det.producto_id,
+                            ProductoMedida.nombre == det.medida_snapshot,
+                        )
+                        medida = session.exec(stmt_med).first()
+                        if medida:
+                            medida.stock = max(0, medida.stock - det.cantidad)
+                            session.add(medida)
+                    else:
+                        prod = session.get(Producto, det.producto_id)
+                        if prod:
+                            prod.stock_cantidad = max(0, prod.stock_cantidad - det.cantidad)
+                            session.add(prod)
 
             # Registrar en historial (INSERT-only)
             uow.session.add(HistorialEstadoPedido(

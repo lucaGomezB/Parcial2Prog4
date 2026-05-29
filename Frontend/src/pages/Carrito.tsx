@@ -17,6 +17,7 @@ import {
   type DireccionEntrega,
   type DireccionEntregaInput,
 } from "../api/direcciones";
+import { getAccessToken } from "../api/client";
 
 /* ── Modal rápido para crear dirección desde el carrito ── */
 function NuevaDireccionModal({
@@ -126,6 +127,14 @@ function NuevaDireccionModal({
 /* ── Carrito ── */
 export default function Carrito() {
   const navigate = useNavigate();
+
+  // Proteger: solo usuarios autenticados pueden ver el carrito
+  useEffect(() => {
+    if (!getAccessToken()) {
+      navigate("/login", { replace: true });
+    }
+  }, [navigate]);
+
   const [items, setItems] = useState<CarritoItem[]>([]);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -173,21 +182,21 @@ export default function Carrito() {
     cargarDirecciones();
   }, []);
 
-  const handleRemove = (productoId: number) => {
-    setItems(removeFromCart(productoId));
+  const handleRemove = (productoId: number, medidaId?: number) => {
+    setItems(removeFromCart(productoId, medidaId));
   };
 
-  const handleIncrement = (productoId: number) => {
-    const item = items.find((i) => i.productoId === productoId);
+  const handleIncrement = (productoId: number, medidaId?: number) => {
+    const item = items.find((i) => i.productoId === productoId && i.medidaId === medidaId);
     if (item) {
-      setItems(updateCantidad(productoId, item.cantidad + 1));
+      setItems(updateCantidad(productoId, item.cantidad + 1, medidaId));
     }
   };
 
-  const handleDecrement = (productoId: number) => {
-    const item = items.find((i) => i.productoId === productoId);
+  const handleDecrement = (productoId: number, medidaId?: number) => {
+    const item = items.find((i) => i.productoId === productoId && i.medidaId === medidaId);
     if (item && item.cantidad > 1) {
-      setItems(updateCantidad(productoId, item.cantidad - 1));
+      setItems(updateCantidad(productoId, item.cantidad - 1, medidaId));
     }
   };
 
@@ -209,6 +218,7 @@ export default function Carrito() {
           cantidad: i.cantidad,
           nombre_snapshot: i.nombre,
           precio_snapshot: i.precio,
+          medida_id: i.medidaId ?? null,
         })),
       });
 
@@ -273,13 +283,18 @@ export default function Carrito() {
         </thead>
         <tbody>
           {items.map((item) => (
-            <tr key={item.productoId} className="hover:bg-gray-100 border-b">
-              <td className="p-2">{item.nombre}</td>
-              <td className="p-2">${item.precio.toFixed(2)}</td>
+            <tr key={`${item.productoId}-${item.medidaId ?? 'default'}`} className="hover:bg-gray-100 border-b">
+              <td className="p-2">
+                {item.nombre}
+                {item.medidaNombre && (
+                  <span className="text-gray-500 ml-1">— {item.medidaNombre}</span>
+                )}
+              </td>
+              <td className="p-2">${Number(item.precio).toFixed(2)}</td>
               <td className="p-2 text-center">
                 <span className="inline-flex items-center gap-1">
                   <button
-                    onClick={() => handleDecrement(item.productoId)}
+                    onClick={() => handleDecrement(item.productoId, item.medidaId)}
                     disabled={item.cantidad <= 1}
                     className="border border-gray-400 bg-white text-gray-700 hover:bg-gray-100 text-sm w-7 h-7 flex items-center justify-center rounded cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                   >
@@ -289,7 +304,7 @@ export default function Carrito() {
                     {item.cantidad}
                   </span>
                   <button
-                    onClick={() => handleIncrement(item.productoId)}
+                    onClick={() => handleIncrement(item.productoId, item.medidaId)}
                     className="border border-gray-400 bg-white text-gray-700 hover:bg-gray-100 text-sm w-7 h-7 flex items-center justify-center rounded cursor-pointer"
                   >
                     +
@@ -297,11 +312,11 @@ export default function Carrito() {
                 </span>
               </td>
               <td className="p-2 font-mono font-semibold">
-                ${(item.precio * item.cantidad).toFixed(2)}
+                ${(Number(item.precio) * item.cantidad).toFixed(2)}
               </td>
               <td className="p-2">
                 <button
-                  onClick={() => handleRemove(item.productoId)}
+                  onClick={() => handleRemove(item.productoId, item.medidaId)}
                   className="bg-red-600 text-white px-3 py-1 rounded text-sm cursor-pointer hover:bg-red-700"
                 >
                   Quitar

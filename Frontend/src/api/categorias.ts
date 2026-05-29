@@ -6,6 +6,7 @@ export interface Categoria {
   descripcion: string | null;
   parent_id: number | null;
   orden_display: number;
+  es_primordial?: boolean;
 }
 
 export interface CategoriaCreate {
@@ -13,6 +14,7 @@ export interface CategoriaCreate {
   descripcion?: string | null;
   parent_id?: number | null;
   orden_display?: number;
+  es_primordial?: boolean;
 }
 
 export interface CategoriaUpdate {
@@ -20,6 +22,7 @@ export interface CategoriaUpdate {
   descripcion?: string | null;
   parent_id?: number | null;
   orden_display?: number | null;
+  es_primordial?: boolean | null;
 }
 
 export interface CategoriaTree {
@@ -29,6 +32,7 @@ export interface CategoriaTree {
   parent_id: number | null;
   imagen_url: string | null;
   orden_display: number;
+  es_primordial: boolean;
   subcategorias: CategoriaTree[];
 }
 

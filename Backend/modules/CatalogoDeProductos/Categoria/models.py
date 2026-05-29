@@ -12,6 +12,7 @@ class CategoriaBase(TimestampModel):
     parent_id: Optional[int] = Field(default=None, foreign_key="categoria.id") # El parent_id es opcional (las categorías raíz no tienen padre)
     imagen_url: Optional[str] = Field(default=None)
     orden_display: int = 0
+    es_primordial: bool = Field(default=False)  # Indica si los productos de esta categoría pueden tener medidas
 
 class Categoria(CategoriaBase, SoftDeleteModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

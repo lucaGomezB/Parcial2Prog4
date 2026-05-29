@@ -8,6 +8,7 @@ class UsuarioCreate(BaseModel):
     email: EmailStr
     celular: Optional[str] = None
     password: str  # Plain password, will be hashed
+    roles_codigos: Optional[List[str]] = None  # Roles to assign on creation
 
 
 class UsuarioRead(BaseModel):

@@ -6,6 +6,7 @@ export interface DetallePedido {
   nombre_snapshot: string;
   precio_snapshot: string;
   subtotal_snap: string;
+  medida_snapshot?: string | null;
   personalizacion?: number[] | null;
 }
 
@@ -47,6 +48,20 @@ export interface CancelarResponse {
   mensaje: string;
 }
 
+export interface StockInsuficienteDetalle {
+  producto_id: number;
+  nombre_producto: string;
+  medida: string | null;
+  cantidad_solicitada: number;
+  stock_disponible: number;
+}
+
+export interface StockInsuficienteError {
+  error: string;
+  mensaje: string;
+  detalles: StockInsuficienteDetalle[];
+}
+
 export interface CreatePedidoInput {
   usuario_id?: number;
   direccion_id?: number;
@@ -60,6 +75,7 @@ export interface CreatePedidoInput {
     cantidad: number;
     nombre_snapshot: string;
     precio_snapshot: number;
+    medida_id?: number | null;
   }[];
 }
 
@@ -90,5 +106,11 @@ export const pedidosApi = {
   cancelar: (id: number) =>
     apiFetch<CancelarResponse>(`/pedidos/${id}/cancelar`, {
       method: "POST",
+    }),
+
+  actualizarDetalle: (pedidoId: number, productoId: number, cantidad: number) =>
+    apiFetch<Pedido>(`/pedidos/${pedidoId}/detalles/${productoId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ cantidad }),
     }),
 };

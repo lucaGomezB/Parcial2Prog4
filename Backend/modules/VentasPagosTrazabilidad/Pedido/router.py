@@ -1,3 +1,4 @@
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select
 from typing import List
@@ -5,11 +6,14 @@ from core.database import get_session
 from modules.IdentidadYAcceso.Auth.dependencies import require_roles, get_current_user
 from modules.IdentidadYAcceso.Usuario.models import Usuario
 from ..HistorialEstadoPedido.models import HistorialEstadoPedido
+from ..uow import VentasPagosTrazabilidadUnitOfWork
 from .service import PedidoService
 from .schemas import (
     PedidoRead, PedidoCreate, PedidoUpdate,
     PedidoAvanzarResponse, PedidoCancelarResponse,
+    DetallePedidoUpdate,
 )
+from ..DetallePedido.models import DetallePedido
 
 router = APIRouter(prefix="/pedidos", tags=["Pedidos"])
 
@@ -160,6 +164,55 @@ def update(pedido_id: int, data: PedidoUpdate, session: Session = Depends(get_se
     if not obj:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
     return obj
+
+
+@router.patch("/{pedido_id}/detalles/{producto_id}", response_model=PedidoRead,
+              dependencies=[Depends(require_roles(["ADMIN", "PEDIDOS"]))])
+def actualizar_detalle(
+    pedido_id: int,
+    producto_id: int,
+    data: DetallePedidoUpdate,
+    session: Session = Depends(get_session),
+):
+    """Update (or remove) a detail line on a PENDIENTE order. cantidad=0 removes it."""
+    pedido = PedidoService.get_by_id(session, pedido_id)
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    if pedido.estado_codigo != "PENDIENTE":
+        raise HTTPException(status_code=400, detail="Solo se pueden modificar detalles en pedidos PENDIENTE")
+
+    with VentasPagosTrazabilidadUnitOfWork(session) as uow:
+        stmt = select(DetallePedido).where(
+            DetallePedido.pedido_id == pedido_id,
+            DetallePedido.producto_id == producto_id,
+        )
+        detalle = session.exec(stmt).first()
+        if not detalle:
+            raise HTTPException(status_code=404, detail="Detalle no encontrado en el pedido")
+
+        if data.cantidad <= 0:
+            # Eliminar el detalle
+            session.delete(detalle)
+        else:
+            # Actualizar cantidad y subtotal
+            detalle.cantidad = data.cantidad
+            detalle.subtotal_snap = detalle.precio_snapshot * data.cantidad
+            session.add(detalle)
+
+        # Recalcular total del pedido
+        detalles_restantes = session.exec(
+            select(DetallePedido).where(DetallePedido.pedido_id == pedido_id)
+        ).all()
+        nuevo_subtotal = sum(d.subtotal_snap for d in detalles_restantes)
+        db_pedido = uow.pedidos.get_by_id(pedido_id)
+        db_pedido.subtotal = nuevo_subtotal
+        db_pedido.total = nuevo_subtotal - db_pedido.descuento + (db_pedido.costo_envio or Decimal('0.00'))
+        if db_pedido.total < 0:
+            db_pedido.total = Decimal('0.00')
+        uow.pedidos.add(db_pedido)
+        uow.commit()
+        uow.pedidos.refresh(db_pedido)
+        return db_pedido
 
 
 @router.delete("/{pedido_id}", status_code=status.HTTP_204_NO_CONTENT,

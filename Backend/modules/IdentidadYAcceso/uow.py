@@ -24,6 +24,9 @@ class IdentidadYAccesoUnitOfWork:
             self.commit()
         return False
 
+    def flush(self):
+        self.session.flush()
+
     def commit(self):
         self.session.commit()
 

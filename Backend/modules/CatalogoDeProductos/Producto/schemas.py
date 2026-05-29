@@ -4,6 +4,23 @@ from pydantic import ConfigDict, field_validator
 from sqlmodel import SQLModel
 from .models import ProductoBase
 
+class ProductoMedidaCreate(SQLModel):
+    nombre: str
+    precio: Decimal
+    stock: int = 0
+    orden: int = 0
+    disponible: bool = True
+
+class ProductoMedidaRead(SQLModel):
+    id: int
+    producto_id: int
+    nombre: str
+    precio: Decimal
+    stock: int
+    orden: int
+    disponible: bool
+    model_config = ConfigDict(from_attributes=True)
+
 class IngredienteAsignado(SQLModel):
     ingrediente_id: int
     es_removible: bool = True
@@ -19,19 +36,13 @@ class ProductoCreate(ProductoBase):
     categorias_ids: List[int] = []
     categoria_principal_id: Optional[int] = None
     ingredientes: Optional[List[IngredienteAsignado]] = []
+    medidas: Optional[List[ProductoMedidaCreate]] = []
 
     @field_validator('categorias_ids')
     @classmethod
     def validar_categorias(cls, v):
         if not v or len(v) == 0:
             raise ValueError('Se requiere al menos 1 categoría para crear un producto')
-        return v
-
-    @field_validator('ingredientes')
-    @classmethod
-    def validar_ingredientes(cls, v):
-        if not v or len(v) == 0:
-            raise ValueError('Se requiere al menos 1 ingrediente para crear un producto')
         return v
 
 class ProductoUpdate(ProductoBase):
@@ -43,6 +54,7 @@ class ProductoUpdate(ProductoBase):
 
 class ProductoRead(ProductoBase):
     id: int
+    medidas: List[ProductoMedidaRead] = []
     model_config = ConfigDict(from_attributes=True)
 
 class ProductoIngredienteRead(SQLModel):

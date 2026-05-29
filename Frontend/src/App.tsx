@@ -49,6 +49,13 @@ function App() {
     checkAuth()
   }, [])
 
+  // ── Escuchar evento auth:login-required desde SessionTimeoutModal ──
+  useEffect(() => {
+    const handler = () => setUserRoles(null);
+    window.addEventListener('auth:login-required', handler);
+    return () => window.removeEventListener('auth:login-required', handler);
+  }, []);
+
   const handleLogout = async () => {
     try {
       await apiFetch('/auth/logout', { method: 'POST' })
@@ -77,7 +84,8 @@ function App() {
     )
   }
 
-  const isClient = !hasRole(userRoles, 'ADMIN', 'STOCK', 'PEDIDOS')
+  const isGuest = !getAccessToken();
+  const isClient = !isGuest && !hasRole(userRoles, 'ADMIN', 'STOCK', 'PEDIDOS')
   const canSeeFullNav = hasRole(userRoles, 'ADMIN', 'PEDIDOS')
   const isAdmin = hasRole(userRoles, 'ADMIN')
 
@@ -90,7 +98,7 @@ function App() {
       { to: '/productos', label: 'Menú' },
       { to: '/pedidos', label: 'Mis Pedidos' },
       { to: '/direcciones', label: 'Direcciones' },
-      { to: '/carrito', label: `Carrito${cartCount > 0 ? ` (${cartCount})` : ''}` },
+      ...(isGuest ? [] : [{ to: '/carrito', label: `Carrito${cartCount > 0 ? ` (${cartCount})` : ''}` }]),
     ];
   } else if (canSeeFullNav) {
     navItems = [
@@ -99,7 +107,7 @@ function App() {
       { to: '/productos', label: 'Productos' },
       { to: '/pedidos', label: 'Pedidos' },
       { to: '/direcciones', label: 'Direcciones' },
-      { to: '/carrito', label: `Carrito${cartCount > 0 ? ` (${cartCount})` : ''}` },
+      ...(isGuest ? [] : [{ to: '/carrito', label: `Carrito${cartCount > 0 ? ` (${cartCount})` : ''}` }]),
     ];
     if (isAdmin) {
       navItems.splice(0, 0, { to: '/admin/usuarios', label: 'Usuarios' });
@@ -109,7 +117,7 @@ function App() {
       { to: '/productos', label: 'Productos' },
       { to: '/pedidos', label: 'Pedidos' },
       { to: '/direcciones', label: 'Direcciones' },
-      { to: '/carrito', label: `Carrito${cartCount > 0 ? ` (${cartCount})` : ''}` },
+      ...(isGuest ? [] : [{ to: '/carrito', label: `Carrito${cartCount > 0 ? ` (${cartCount})` : ''}` }]),
     ];
   }
 
@@ -152,7 +160,7 @@ function App() {
               <>
                 <Route path="/" element={<Navigate to="/productos" replace />} />
                 <Route path="/productos" element={<ProductosCRUD role={productRole} />} />
-                <Route path="/carrito" element={<Carrito />} />
+                {!isGuest && <Route path="/carrito" element={<Carrito />} />}
                 <Route path="/pedidos" element={<PedidosPage />} />
                 <Route path="/direcciones" element={<DireccionesPage />} />
                 <Route path="*" element={<Navigate to="/productos" replace />} />
@@ -164,7 +172,7 @@ function App() {
                 {canSeeFullNav && <Route path="/ingredientes" element={<IngredientesCRUD />} />}
                 <Route path="/admin/usuarios" element={<AdminUsuariosPage />} />
                 <Route path="/productos" element={<ProductosCRUD role={productRole} />} />
-                <Route path="/carrito" element={<Carrito />} />
+                {!isGuest && <Route path="/carrito" element={<Carrito />} />}
                 <Route path="/pedidos" element={<PedidosPage />} />
                 <Route path="/direcciones" element={<DireccionesPage />} />
                 <Route path="*" element={<Navigate to="/productos" replace />} />

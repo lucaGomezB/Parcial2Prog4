@@ -19,7 +19,7 @@ from modules.IdentidadYAcceso.Usuario.service import get_password_hash
 # ── Catálogo ──
 from modules.CatalogoDeProductos.Categoria.models import Categoria
 from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
-from modules.CatalogoDeProductos.Producto.models import Producto
+from modules.CatalogoDeProductos.Producto.models import Producto, ProductoMedida
 from modules.CatalogoDeProductos.producto_categoria import ProductoCategoria
 from modules.CatalogoDeProductos.producto_ingrediente import ProductoIngrediente
 
@@ -50,15 +50,17 @@ USERS_SEED = [
 ]
 
 CATEGORIAS_SEED = [
-    # (nombre, descripción, nombre_del_padre, orden_display)
-    ("Bebidas",             "Todas las bebidas",             None,             1),
-    ("Bebidas Frías",       "Gaseosas, jugos, aguas",        "Bebidas",        1),
-    ("Bebidas Calientes",   "Café, té, chocolate",           "Bebidas",        2),
-    ("Sandwichs",           "Sandwichs fríos y calientes",   None,             2),
-    ("Sandwichs Calientes", "Tostados, hamburguesas",        "Sandwichs",      1),
-    ("Sandwichs Fríos",     "Sandwich de miga, ciabatta",    "Sandwichs",      2),
-    ("Guarniciones",        "Papas fritas, aros de cebolla", None,             3),
-    ("Postres",             "Flan, helado, tortas",          None,             4),
+    # (nombre, descripción, nombre_del_padre, orden_display, es_primordial)
+    ("Bebidas",             "Todas las bebidas",             None,             1, True),
+    ("Bebidas Frías",       "Gaseosas, jugos, aguas",        "Bebidas",        1, False),
+    ("Bebidas Calientes",   "Café, té, chocolate",           "Bebidas",        2, False),
+    ("Sandwichs",           "Sandwichs fríos y calientes",   None,             2, False),
+    ("Sandwichs Calientes", "Tostados, hamburguesas",        "Sandwichs",      1, False),
+    ("Sandwichs Fríos",     "Sandwich de miga, ciabatta",    "Sandwichs",      2, False),
+    ("Guarniciones",        "Papas fritas, aros de cebolla", None,             3, False),
+    ("Postres",             "Flan, helado, tortas",          None,             4, False),
+    ("Pizzas",              "Pizzas enteras y porciones",    None,             5, True),
+    ("Tartas",              "Tartas dulces y saladas",       None,             6, True),
 ]
 
 INGREDIENTES_SEED = [
@@ -164,6 +166,53 @@ PRODUCTOS_SEED = [
             ("Vainilla", False, False, 4),
         ],
     ),
+    dict(
+        nombre="Coca Cola",
+        descripcion="Gaseosa sabor cola",
+        precio=Decimal("0.00"), tiempo=1, disponible=True,
+        categorias=[("Bebidas Frías", True)],
+        ingredientes=[
+            ("Agua", False, False, 1),
+            ("Gasificación", False, False, 2),
+            ("Azúcar", False, False, 3),
+        ],
+        medidas=[
+            ("250ml", Decimal("1500.00"), 10, 1),
+            ("500ml", Decimal("2500.00"), 5, 2),
+            ("1L", Decimal("4000.00"), 2, 3),
+        ],
+    ),
+    dict(
+        nombre="Pizza Muzzarella",
+        descripcion="Pizza clásica con mozzarella y salsa",
+        precio=Decimal("0.00"), tiempo=15, disponible=True,
+        categorias=[("Pizzas", True)],
+        ingredientes=[
+            ("Harina de trigo", False, False, 1),
+            ("Queso mozzarella", False, True, 2),
+            ("Tomate", False, False, 3),
+        ],
+        medidas=[
+            ("1 porción", Decimal("3000.00"), 20, 1),
+            ("entera", Decimal("12000.00"), 5, 2),
+        ],
+    ),
+    dict(
+        nombre="Tarta de Jamón y Queso",
+        descripcion="Tarta rellena de jamón cocido y queso",
+        precio=Decimal("0.00"), tiempo=12, disponible=True,
+        categorias=[("Tartas", True)],
+        ingredientes=[
+            ("Harina de trigo", False, True, 1),
+            ("Huevo", False, False, 2),
+            ("Queso mozzarella", False, False, 3),
+        ],
+        medidas=[
+            ("1 porción", Decimal("2500.00"), 15, 1),
+            ("media", Decimal("7000.00"), 8, 2),
+            ("entera", Decimal("12000.00"), 3, 3),
+        ],
+    ),
 ]
 
 ESTADOS_PEDIDO_SEED = [
@@ -232,12 +281,12 @@ def seed_categorias(session: Session):
     created: dict[str, Categoria] = {}
 
     # Primera pasada: crear todas
-    for nombre, desc, parent_nombre, orden in CATEGORIAS_SEED:
+    for nombre, desc, parent_nombre, orden, primordial in CATEGORIAS_SEED:
         existing = _get_by_name(session, Categoria, nombre)
         if existing:
             created[nombre] = existing
             continue
-        cat = Categoria(nombre=nombre, descripcion=desc, orden_display=orden)
+        cat = Categoria(nombre=nombre, descripcion=desc, orden_display=orden, es_primordial=primordial)
         session.add(cat)
         session.flush()
         created[nombre] = cat
@@ -245,7 +294,7 @@ def seed_categorias(session: Session):
     session.commit()
 
     # Segunda pasada: asignar padres
-    for nombre, desc, parent_nombre, orden in CATEGORIAS_SEED:
+    for nombre, desc, parent_nombre, orden, primordial in CATEGORIAS_SEED:
         if parent_nombre:
             cat = created.get(nombre) or _get_by_name(session, Categoria, nombre)
             parent = created.get(parent_nombre) or _get_by_name(session, Categoria, parent_nombre)
@@ -274,9 +323,14 @@ def seed_productos(session: Session):
         if existing:
             continue
 
-        stock = random.randint(0, 500)
-        # Regla de negocio: stock 0 → no disponible
-        disponible = prod_data["disponible"] and stock > 0
+        tiene_medidas = "medidas" in prod_data and prod_data["medidas"]
+
+        if tiene_medidas:
+            stock = 0
+            disponible = any(m[2] > 0 for m in prod_data["medidas"])  # m[2] = stock
+        else:
+            stock = random.randint(0, 500)
+            disponible = prod_data["disponible"] and stock > 0
 
         producto = Producto(
             nombre=prod_data["nombre"],
@@ -309,6 +363,17 @@ def seed_productos(session: Session):
                     es_removible=removible,
                     es_principal=principal,
                     orden=orden,
+                ))
+
+        # Crear medidas si el producto las tiene
+        if tiene_medidas:
+            for m_nombre, m_precio, m_stock, m_orden in prod_data["medidas"]:
+                session.add(ProductoMedida(
+                    producto_id=producto.id,
+                    nombre=m_nombre,
+                    precio=m_precio,
+                    stock=m_stock,
+                    orden=m_orden,
                 ))
 
     session.commit()

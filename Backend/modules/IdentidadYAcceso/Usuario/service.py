@@ -26,9 +26,18 @@ def crear_usuario(session: Session, datos: UsuarioCreate) -> Usuario:
             password_hash=get_password_hash(datos.password),
         )
         uow.usuarios.add(nuevo_usuario)
+        uow.flush()
+
+        # Assign roles if provided
+        if datos.roles_codigos:
+            for codigo in datos.roles_codigos:
+                rol = uow.roles.get_by_id(codigo)
+                if rol:
+                    nuevo_usuario.roles.append(rol)
+
         uow.commit()
         uow.usuarios.refresh(nuevo_usuario)
-        return nuevo_usuario
+        return _load_roles(session, nuevo_usuario)
 
 
 def _load_roles(session: Session, usuario: Usuario):

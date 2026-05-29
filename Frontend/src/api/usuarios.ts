@@ -14,6 +14,15 @@ export interface Usuario {
   roles: RolSimple[];
 }
 
+export interface UsuarioCreate {
+  nombre: string;
+  apellido: string;
+  email: string;
+  celular?: string | null;
+  password: string;
+  roles_codigos?: string[];
+}
+
 export interface UsuarioUpdate {
   nombre?: string;
   apellido?: string;
@@ -23,6 +32,11 @@ export interface UsuarioUpdate {
 }
 
 export const usuariosApi = {
+  create: (data: UsuarioCreate) =>
+    apiFetch<Usuario>("/usuarios/", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   getAll: (skip = 0, limit = 100, rolCodigo?: string) => {
     let url = `/usuarios/?skip=${skip}&limit=${limit}`;
     if (rolCodigo) url += `&rol_codigo=${rolCodigo}`;

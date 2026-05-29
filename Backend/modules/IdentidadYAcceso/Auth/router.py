@@ -7,6 +7,8 @@ from . import service
 from .dependencies import get_current_user
 from .config import settings
 from modules.IdentidadYAcceso.Usuario.models import Usuario
+from modules.IdentidadYAcceso.Usuario.schemas import UsuarioCreate
+from modules.IdentidadYAcceso.Usuario.service import crear_usuario
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
@@ -30,6 +32,39 @@ def _clear_refresh_cookie(response: Response):
     response.delete_cookie(
         key="refresh_token",
         path="/api/auth/refresh",
+    )
+
+
+@router.post("/register", response_model=TokenResponse)
+def register(
+    datos: UsuarioCreate,
+    response: Response,
+    session: Session = Depends(get_session),
+):
+    """
+    Registra un nuevo usuario con rol CLIENT.
+    Endpoint público — no requiere autenticación.
+    Auto-login: devuelve access_token + refresh_token en cookie.
+    """
+    # Forzar rol CLIENT — ignorar cualquier roles_codigos enviado
+    datos.roles_codigos = ["CLIENT"]
+    user = crear_usuario(session, datos)
+
+    # Auto-login
+    token_data = TokenData(user_id=user.id, email=user.email)
+    access_token = service.create_access_token(
+        token_data,
+        timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    refresh_token = service.create_refresh_token(session, user.id)
+
+    _set_refresh_cookie(response, refresh_token)
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
 
