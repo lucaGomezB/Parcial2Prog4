@@ -1,0 +1,9 @@
+ROLES:
+
+ADMINISTRADOR: admin@email.com admin123
+
+STOCK: stock@email.com stock123
+
+CLIENTE: client@email.com client123
+
+GESTION DE PEDIDOS: pedidos@email.com pedidos123

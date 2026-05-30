@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from datetime import timedelta
 from sqlmodel import Session
 from core.database import get_session
+from core.rate_limit import limiter
 from .schemas import LoginRequest, TokenResponse, TokenData
 from . import service
 from .dependencies import get_current_user
@@ -69,7 +70,9 @@ def register(
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("5/minute")
 def login(
+    request: Request,
     credentials: LoginRequest,
     response: Response,
     session: Session = Depends(get_session),
@@ -78,6 +81,7 @@ def login(
     Autentica al usuario.
     - access_token en el body (para Authorization header)
     - refresh_token en httpOnly cookie (seguro contra XSS)
+    - Rate limit: 5 intentos por minuto por IP
     """
     user = service.authenticate_user(session, credentials.email, credentials.password)
 

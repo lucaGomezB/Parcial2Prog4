@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
-import type { Categoria, CategoriaCreate, CategoriaTree } from "../api/categorias";
+import { useEffect, useState, useCallback, useRef } from "react";
+import type { CategoriaCreate, CategoriaTree } from "../api/categorias";
 import { categoriasApi } from "../api/categorias";
 import { exportToExcel } from "../utils/exportExcel";
+
 
 /* ── Helpers ── */
 
@@ -39,6 +40,17 @@ function getDescendantIds(node: CategoriaTree): number[] {
   return ids;
 }
 
+function findCategoriaInTree(nodes: CategoriaTree[], id: number): CategoriaTree | null {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    if (node.subcategorias.length > 0) {
+      const found = findCategoriaInTree(node.subcategorias, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 /* ── Tree Row ── */
 function CategoryTreeRow({
   categoria, depth, expanded, onToggle, onEdit, onDelete,
@@ -73,13 +85,6 @@ function CategoryTreeRow({
           </span>
         </td>
         <td className="p-2 text-sm text-gray-600">{categoria.descripcion ?? "-"}</td>
-        <td className="p-2">
-          {categoria.es_primordial ? (
-            <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">Primordial</span>
-          ) : (
-            <span className="text-sm text-gray-400">-</span>
-          )}
-        </td>
         <td className="p-2">
           <div className="flex gap-1">
             <button onClick={() => onEdit(categoria)}
@@ -182,11 +187,17 @@ export default function CategoriasCRUD() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<CategoriaCreate>({
-    nombre: "", descripcion: "", parent_id: null, orden_display: 0, es_primordial: false,
+    nombre: "", descripcion: "", parent_id: null, orden_display: 0,
   });
   const [selectedParentId, setSelectedParentId] = useState<number | null>(null);
   const [selectedParentName, setSelectedParentName] = useState("");
   const [showParentSelector, setShowParentSelector] = useState(false);
+
+  const formRef = useRef<HTMLFormElement>(null);
+
+  useEffect(() => {
+    if (showForm) formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [showForm]);
 
   const loadTree = useCallback(async () => {
     setLoading(true);
@@ -220,7 +231,6 @@ export default function CategoriasCRUD() {
       descripcion: cat.descripcion ?? "",
       parent_id: cat.parent_id,
       orden_display: cat.orden_display,
-      es_primordial: cat.es_primordial,
     });
     // Find parent name from tree
     const findParent = (nodes: CategoriaTree[]): string => {
@@ -239,7 +249,7 @@ export default function CategoriasCRUD() {
   const handleCreate = () => {
     setEditingId(null);
     setShowForm(true);
-    setForm({ nombre: "", descripcion: "", parent_id: null, orden_display: 0, es_primordial: false });
+    setForm({ nombre: "", descripcion: "", parent_id: null, orden_display: 0 });
     setSelectedParentId(null);
     setSelectedParentName("");
     setShowParentSelector(false);
@@ -248,7 +258,7 @@ export default function CategoriasCRUD() {
   const handleCloseForm = () => {
     setShowForm(false);
     setEditingId(null);
-    setForm({ nombre: "", descripcion: "", parent_id: null, orden_display: 0, es_primordial: false });
+    setForm({ nombre: "", descripcion: "", parent_id: null, orden_display: 0 });
     setSelectedParentId(null);
     setSelectedParentName("");
   };
@@ -303,7 +313,7 @@ export default function CategoriasCRUD() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="border p-4 mb-4 rounded bg-gray-50 grid grid-cols-2 gap-2">
+        <form ref={formRef} onSubmit={handleSubmit} className="border p-4 mb-4 rounded bg-gray-50 grid grid-cols-2 gap-2">
           <div>
             <label className="block text-sm font-medium">Nombre</label>
             <input value={form.nombre}
@@ -324,18 +334,8 @@ export default function CategoriasCRUD() {
                 className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer hover:bg-blue-700">Seleccionar</button>
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium">Orden Display</label>
-            <input type="number" value={form.orden_display ?? 0}
-              onChange={(e) => setForm({ ...form, orden_display: Number(e.target.value) })}
-              className="border px-2 py-1 rounded w-full" />
-          </div>
-          <div className="col-span-2 flex items-center gap-2">
-            <label className="text-sm font-medium">Es primordial</label>
-            <input type="checkbox" checked={form.es_primordial ?? false}
-              onChange={(e) => setForm({ ...form, es_primordial: e.target.checked })}
-              className="w-4 h-4 cursor-pointer" />
-          </div>
+
+
           <div className="col-span-2 flex gap-2 mt-2">
             <button type="submit" className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer hover:bg-blue-700">
               {editingId ? "Actualizar" : "Crear"}</button>
@@ -353,7 +353,10 @@ export default function CategoriasCRUD() {
             setSelectedParentId(id);
             setSelectedParentName(name);
             setShowParentSelector(false);
-            setForm((f) => ({ ...f, parent_id: id }));
+            setForm((f) => ({
+              ...f,
+              parent_id: id,
+            }));
           }}
           onClose={() => setShowParentSelector(false)}
         />
@@ -366,12 +369,11 @@ export default function CategoriasCRUD() {
           <thead><tr className="bg-gray-200">
             <th className="border p-2 text-left">Nombre</th>
             <th className="border p-2 text-left">Descripción</th>
-            <th className="border p-2 text-left">Primordial</th>
             <th className="border p-2 text-left">Acciones</th>
           </tr></thead>
           <tbody>
             {displayTree.length === 0 ? (
-              <tr><td colSpan={4} className="border p-2 text-center text-gray-500">Sin resultados</td></tr>
+              <tr><td colSpan={3} className="border p-2 text-center text-gray-500">Sin resultados</td></tr>
             ) : (
               displayTree.map((root) => (
                 <CategoryTreeRow

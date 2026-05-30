@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -5,7 +6,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from fastapi.middleware.cors import CORSMiddleware
-from sqlmodel import SQLModel, create_engine, Session
+from slowapi.errors import RateLimitExceeded
+from sqlmodel import create_engine, Session
+from alembic.config import Config
+from alembic import command
+from core.rate_limit import limiter
 from modules.CatalogoDeProductos.Categoria.router import router as categoria_router
 from modules.CatalogoDeProductos.Producto.router import router as producto_router
 from modules.CatalogoDeProductos.Ingrediente.router import router as ingrediente_router
@@ -42,7 +47,8 @@ engine = create_engine(DATABASE_URL, echo=True)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- Startup ---
-    SQLModel.metadata.create_all(engine)  # Creación de tablas
+    alembic_cfg = Config("alembic.ini")
+    command.upgrade(alembic_cfg, "head")
 
     # Seed roles (idempotente)
     from app.db.seed import run_seed
@@ -64,6 +70,20 @@ app = FastAPI(
     lifespan=lifespan,
     redirect_slashes=False
 )
+
+# Rate limiting
+app.state.limiter = limiter
+
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    from fastapi.responses import JSONResponse
+    response = JSONResponse(
+        status_code=429,
+        content={"detail": "Error: Demasiados intentos fallidos. Por favor vuelva a intentar en unos minutos."},
+    )
+    response.headers["Retry-After"] = "60"
+    return response
+
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -88,8 +108,12 @@ app.include_router(pedido_router)
 def read_root():
     return {"status": "online"} # Endpoint para probar si anda la app.
 
+logger = logging.getLogger(__name__)
+
+
 @app.exception_handler(IntegrityError)
 async def integrity_error_handler(request: Request, exc: IntegrityError):
+    logger.error("IntegrityError en %s %s: %s", request.method, request.url.path, exc)
     return JSONResponse(
         status_code=400,
         content={"detail": "Error de integridad en la base de datos (Ej: ID inexistente o duplicado)."},

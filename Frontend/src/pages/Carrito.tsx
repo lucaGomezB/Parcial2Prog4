@@ -10,7 +10,7 @@ import {
   type CarritoItem,
 } from "../utils/carrito";
 import { AxiosError } from "axios";
-import { pedidosApi } from "../api/pedidos";
+import { pedidosApi, type ValidarStockDetalle, type ValidarStockInput } from "../api/pedidos";
 import {
   direccionesApi,
   formatDireccion,
@@ -124,6 +124,107 @@ function NuevaDireccionModal({
   );
 }
 
+/* ── Modal de advertencia de stock ── */
+function StockWarningModal({
+  detalles,
+  onAdjust,
+  onClose,
+}: {
+  detalles: ValidarStockDetalle[];
+  onAdjust: (ajustes: Record<string, number>) => void;
+  onClose: () => void;
+}) {
+  const [ajustes, setAjustes] = useState<Record<string, number>>(() => {
+    const init: Record<string, number> = {};
+    for (const d of detalles) {
+      const key = `${d.producto_id}`;
+      init[key] = Math.min(d.cantidad_solicitada, d.stock_disponible);
+    }
+    return init;
+  });
+
+  const handleConfirm = () => {
+    onAdjust(ajustes);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded p-6 w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-bold mb-1">Stock Insuficiente</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Algunos productos no tienen stock suficiente. Ajustá las cantidades o remové los productos para continuar.
+        </p>
+
+        <table className="w-full border-collapse border mb-4">
+          <thead>
+            <tr className="bg-gray-200">
+              <th className="border p-2 text-left">Producto</th>
+              <th className="border p-2 text-center">Solicitado</th>
+              <th className="border p-2 text-center">Stock Disp.</th>
+              <th className="border p-2 text-center">Nueva Cant.</th>
+              <th className="border p-2 text-center">Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            {detalles.map((d) => {
+              const key = `${d.producto_id}`;
+              const val = ajustes[key] ?? 0;
+              const seraEliminado = val <= 0;
+              return (
+                <tr key={key} className={seraEliminado ? "bg-red-50" : ""}>
+                  <td className="border p-2">{d.nombre_producto}</td>
+                  <td className="border p-2 text-center">{d.cantidad_solicitada}</td>
+                  <td className="border p-2 text-center font-semibold">{d.stock_disponible}</td>
+                  <td className="border p-2 text-center">
+                    <input
+                      type="number"
+                      min={0}
+                      max={d.stock_disponible}
+                      value={val}
+                      onChange={(e) => {
+                        const v = Math.min(d.stock_disponible, Math.max(0, Number(e.target.value) || 0));
+                        setAjustes((prev) => ({ ...prev, [key]: v }));
+                      }}
+                      className={`w-20 border rounded px-2 py-1 text-center ${seraEliminado ? "border-red-400 bg-red-100" : "border-gray-300"}`}
+                    />
+                  </td>
+                  <td className="border p-2 text-center">
+                    {seraEliminado ? (
+                      <span className="text-red-600 text-sm font-medium">Se eliminará</span>
+                    ) : (
+                      <button
+                        onClick={() => setAjustes((prev) => ({ ...prev, [key]: 0 }))}
+                        className="bg-red-600 text-white px-2 py-1 rounded text-sm cursor-pointer hover:bg-red-700"
+                      >
+                        Quitar
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-100 cursor-pointer"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleConfirm}
+            className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
+          >
+            Confirmar Cambios
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Carrito ── */
 export default function Carrito() {
   const navigate = useNavigate();
@@ -142,6 +243,7 @@ export default function Carrito() {
   const [direccionSelId, setDireccionSelId] = useState<number | "nueva" | null>(null);
   const [showNewDir, setShowNewDir] = useState(false);
   const [loadingDirs, setLoadingDirs] = useState(false);
+  const [stockWarnings, setStockWarnings] = useState<ValidarStockDetalle[] | null>(null);
 
   // Sincronizar estado con localStorage al montar
   useEffect(() => {
@@ -182,30 +284,47 @@ export default function Carrito() {
     cargarDirecciones();
   }, []);
 
-  const handleRemove = (productoId: number, medidaId?: number) => {
-    setItems(removeFromCart(productoId, medidaId));
+  const handleRemove = (productoId: number) => {
+    setItems(removeFromCart(productoId));
   };
 
-  const handleIncrement = (productoId: number, medidaId?: number) => {
-    const item = items.find((i) => i.productoId === productoId && i.medidaId === medidaId);
+  const handleIncrement = (productoId: number) => {
+    const item = items.find((i) => i.productoId === productoId);
     if (item) {
-      setItems(updateCantidad(productoId, item.cantidad + 1, medidaId));
+      setItems(updateCantidad(productoId, item.cantidad + 1));
     }
   };
 
-  const handleDecrement = (productoId: number, medidaId?: number) => {
-    const item = items.find((i) => i.productoId === productoId && i.medidaId === medidaId);
+  const handleDecrement = (productoId: number) => {
+    const item = items.find((i) => i.productoId === productoId);
     if (item && item.cantidad > 1) {
-      setItems(updateCantidad(productoId, item.cantidad - 1, medidaId));
+      setItems(updateCantidad(productoId, item.cantidad - 1));
     }
   };
 
-  const handleRealizarPedido = async () => {
-    if (items.length === 0) return;
+  const doRealizarPedido = async () => {
+    // Leer items frescos de localStorage para evitar stale closure
+    const currentItems = getCarrito();
+    if (currentItems.length === 0) return;
     setEnviando(true);
     setError(null);
 
     try {
+      // Step 1: Pre-validate stock
+      const stockResult = await pedidosApi.validarStock({
+        detalles: currentItems.map((i) => ({
+          producto_id: i.productoId,
+          cantidad: i.cantidad,
+        })),
+      });
+
+      if (!stockResult.valido) {
+        setStockWarnings(stockResult.detalles);
+        setEnviando(false);
+        return;
+      }
+
+      // Step 2: Create the order
       const direccionId = typeof direccionSelId === "number" ? direccionSelId : undefined;
       await pedidosApi.create({
         forma_pago_codigo: "EFECTIVO",
@@ -213,12 +332,11 @@ export default function Carrito() {
         descuento: 0,
         costo_envio: direccionId ? 50 : 0,
         direccion_id: direccionId,
-        detalles: items.map((i) => ({
+        detalles: currentItems.map((i) => ({
           producto_id: i.productoId,
           cantidad: i.cantidad,
           nombre_snapshot: i.nombre,
           precio_snapshot: i.precio,
-          medida_id: i.medidaId ?? null,
         })),
       });
 
@@ -226,14 +344,57 @@ export default function Carrito() {
       setItems([]);
       navigate("/pedidos");
     } catch (e) {
+      // Step 3: Handle 409 from auto-advance (race condition)
+      if (e instanceof AxiosError && e.response?.status === 409) {
+        const body = e.response.data as Record<string, unknown>;
+        // FastAPI wraps detail: { detail: { error: "stock_insuficiente", detalles: [...] } }
+        const detail = body?.detail as Record<string, unknown> | undefined;
+        if (detail?.error === "stock_insuficiente" && Array.isArray(detail?.detalles)) {
+          setStockWarnings(detail.detalles as ValidarStockDetalle[]);
+          setEnviando(false);
+          return;
+        }
+      }
+      // Generic error handling
       if (e instanceof AxiosError && e.response?.data) {
-        const detail = (e.response.data as { detail?: string }).detail;
-        setError(detail ?? (e as Error).message);
+        const data = e.response.data as Record<string, unknown>;
+        const detail = data.detail;
+        if (detail != null && typeof detail === "object") {
+          setError(JSON.stringify(detail));
+        } else if (typeof detail === "string") {
+          setError(detail);
+        } else if (typeof data.message === "string") {
+          setError(data.message);
+        } else {
+          setError((e as Error).message);
+        }
       } else {
         setError((e as Error).message);
       }
     } finally {
       setEnviando(false);
+    }
+  };
+
+  const handleRealizarPedido = () => {
+    doRealizarPedido();
+  };
+
+  const handleStockAdjust = (ajustes: Record<string, number>) => {
+    for (const [key, nuevaCantidad] of Object.entries(ajustes)) {
+      const productoId = Number(key);
+      if (nuevaCantidad <= 0) {
+        removeFromCart(productoId);
+      } else {
+        updateCantidad(productoId, nuevaCantidad);
+      }
+    }
+    setStockWarnings(null);
+    const freshItems = getCarrito();
+    setItems(freshItems);
+    // Re-submit with FRESH items (doRealizarPedido reads from getCarrito internamente)
+    if (freshItems.length > 0) {
+      doRealizarPedido();
     }
   };
 
@@ -283,18 +444,13 @@ export default function Carrito() {
         </thead>
         <tbody>
           {items.map((item) => (
-            <tr key={`${item.productoId}-${item.medidaId ?? 'default'}`} className="hover:bg-gray-100 border-b">
-              <td className="p-2">
-                {item.nombre}
-                {item.medidaNombre && (
-                  <span className="text-gray-500 ml-1">— {item.medidaNombre}</span>
-                )}
-              </td>
+            <tr key={item.productoId} className="hover:bg-gray-100 border-b">
+              <td className="p-2">{item.nombre}</td>
               <td className="p-2">${Number(item.precio).toFixed(2)}</td>
               <td className="p-2 text-center">
                 <span className="inline-flex items-center gap-1">
                   <button
-                    onClick={() => handleDecrement(item.productoId, item.medidaId)}
+                    onClick={() => handleDecrement(item.productoId)}
                     disabled={item.cantidad <= 1}
                     className="border border-gray-400 bg-white text-gray-700 hover:bg-gray-100 text-sm w-7 h-7 flex items-center justify-center rounded cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                   >
@@ -304,7 +460,7 @@ export default function Carrito() {
                     {item.cantidad}
                   </span>
                   <button
-                    onClick={() => handleIncrement(item.productoId, item.medidaId)}
+                    onClick={() => handleIncrement(item.productoId)}
                     className="border border-gray-400 bg-white text-gray-700 hover:bg-gray-100 text-sm w-7 h-7 flex items-center justify-center rounded cursor-pointer"
                   >
                     +
@@ -316,7 +472,7 @@ export default function Carrito() {
               </td>
               <td className="p-2">
                 <button
-                  onClick={() => handleRemove(item.productoId, item.medidaId)}
+                  onClick={() => handleRemove(item.productoId)}
                   className="bg-red-600 text-white px-3 py-1 rounded text-sm cursor-pointer hover:bg-red-700"
                 >
                   Quitar
@@ -389,6 +545,15 @@ export default function Carrito() {
           {enviando ? "Creando pedido..." : "Realizar Pedido"}
         </button>
       </div>
+
+      {/* Modal de advertencia de stock */}
+      {stockWarnings && (
+        <StockWarningModal
+          detalles={stockWarnings}
+          onAdjust={handleStockAdjust}
+          onClose={() => setStockWarnings(null)}
+        />
+      )}
 
       {/* Modal nueva dirección */}
       {showNewDir && (

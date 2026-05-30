@@ -1,16 +1,15 @@
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # --- ESQUEMAS DE ENTRADA (Validación) ---
 
 class CategoriaCreate(BaseModel):
-    nombre: str
+    nombre: str = Field(min_length=1, max_length=100)
     descripcion: Optional[str] = None
     parent_id: Optional[int] = None
     imagen_url: Optional[str] = None
     orden_display: int = 0
-    es_primordial: bool = False
 
 
 class CategoriaUpdate(BaseModel):
@@ -19,7 +18,6 @@ class CategoriaUpdate(BaseModel):
     parent_id: Optional[int] = None
     imagen_url: Optional[str] = None
     orden_display: Optional[int] = None
-    es_primordial: Optional[bool] = None
 
 
 # --- ESQUEMAS DE SALIDA (Respuesta de la API) ---
@@ -31,7 +29,6 @@ class CategoriaRead(BaseModel):
     parent_id: Optional[int] = None
     imagen_url: Optional[str] = None
     orden_display: int
-    es_primordial: bool
 
     class Config:
         from_attributes = True

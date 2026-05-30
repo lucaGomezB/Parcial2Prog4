@@ -10,7 +10,6 @@ class DetallePedidoInput(BaseModel):
     nombre_snapshot: str
     precio_snapshot: Decimal
     personalizacion: Optional[List[int]] = None
-    medida_id: Optional[int] = None
 
 
 class PedidoCreate(BaseModel):
@@ -44,7 +43,6 @@ class DetallePedidoRead(BaseModel):
     precio_snapshot: Decimal
     subtotal_snap: Decimal
     personalizacion: Optional[List[int]] = None
-    medida_snapshot: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -97,7 +95,6 @@ class PedidoCancelarResponse(BaseModel):
 class StockInsuficienteDetalle(BaseModel):
     producto_id: int
     nombre_producto: str
-    medida: Optional[str] = None
     cantidad_solicitada: int
     stock_disponible: int
 
@@ -110,3 +107,24 @@ class StockInsuficienteError(BaseModel):
 
 class DetallePedidoUpdate(BaseModel):
     cantidad: int  # 0 = eliminar el detalle
+
+
+class ValidarStockDetalleInput(BaseModel):
+    producto_id: int
+    cantidad: int
+
+
+class ValidarStockInput(BaseModel):
+    detalles: list[ValidarStockDetalleInput]
+
+
+class ValidarStockDetalleResponse(BaseModel):
+    producto_id: int
+    nombre_producto: str
+    cantidad_solicitada: int
+    stock_disponible: int
+
+
+class ValidarStockResponse(BaseModel):
+    valido: bool
+    detalles: list[ValidarStockDetalleResponse] = []

@@ -3,13 +3,12 @@ from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from decimal import Decimal
 from fastapi import HTTPException, status
+import math
 from .models import Pedido
-from .schemas import PedidoCreate, PedidoUpdate
+from .schemas import PedidoCreate, PedidoUpdate, ValidarStockInput, ValidarStockResponse, ValidarStockDetalleResponse
 from ..uow import VentasPagosTrazabilidadUnitOfWork
 from ..DetallePedido.models import DetallePedido
-from ..HistorialEstadoPedido.models import HistorialEstadoPedido
 from models.base import get_utc_now
-from modules.CatalogoDeProductos.Producto.models import ProductoMedida
 
 ESTADOS_TERMINALES = {"ENTREGADO", "CANCELADO"}
 
@@ -122,29 +121,14 @@ class PedidoService:
                 total=total,
                 notas=data.notas,
             )
-            uow.pedidos.add(db_pedido)
-            uow.pedidos.flush()  # para obtener ID antes de crear detalles
+            uow.add(db_pedido)
+            uow.flush()  # para obtener ID antes de crear detalles
 
             # Crear DetallePedido snapshots si vienen en el create
             if data.detalles:
                 for det in data.detalles:
-                    # Validar medida si se especificó
-                    medida_nombre = None
-                    if det.medida_id is not None:
-                        stmt = select(ProductoMedida).where(
-                            ProductoMedida.id == det.medida_id,
-                            ProductoMedida.producto_id == det.producto_id,
-                        )
-                        medida_db = session.exec(stmt).first()
-                        if not medida_db:
-                            raise HTTPException(
-                                status_code=status.HTTP_400_BAD_REQUEST,
-                                detail=f"Medida ID {det.medida_id} no encontrada para producto {det.producto_id}",
-                            )
-                        medida_nombre = medida_db.nombre
-
                     line_total = det.precio_snapshot * det.cantidad
-                    uow.session.add(DetallePedido(
+                    uow.add(DetallePedido(
                         pedido_id=db_pedido.id,
                         producto_id=det.producto_id,
                         cantidad=det.cantidad,
@@ -152,37 +136,111 @@ class PedidoService:
                         precio_snapshot=det.precio_snapshot,
                         subtotal_snap=line_total,
                         personalizacion=det.personalizacion,
-                        medida_snapshot=medida_nombre,
                     ))
 
-            uow.commit()
-            uow.pedidos.refresh(db_pedido)
+            # ── Registrar historial de creación (estado_desde=NULL) ──
+            uow.avanzar_estado(
+                pedido=db_pedido,
+                estado_anterior=None,        # NULL = creación
+                estado_siguiente="PENDIENTE",
+                usuario_id=data.usuario_id,  # quien creó el pedido
+            )
+
+            uow.refresh(db_pedido)
             return db_pedido
 
     @staticmethod
-    def avanzar_estado(session: Session, pedido_id: int, usuario) -> Pedido:
+    def validar_stock_items(session: Session, data: ValidarStockInput) -> ValidarStockResponse:
+        """Verifica stock para un conjunto de items SIN crear pedido ni efectos secundarios."""
+        from modules.CatalogoDeProductos.Producto.models import Producto
+
+        errores: list[ValidarStockDetalleResponse] = []
+
+        for det in data.detalles:
+            # Validar contra Producto.stock_cantidad
+            prod = session.get(Producto, det.producto_id)
+            if not prod:
+                raise HTTPException(status_code=404, detail=f"Producto {det.producto_id} no encontrado")
+            stock_disp = prod.stock_cantidad
+            if stock_disp < det.cantidad:
+                errores.append(ValidarStockDetalleResponse(
+                    producto_id=det.producto_id,
+                    nombre_producto=prod.nombre,
+                    cantidad_solicitada=det.cantidad,
+                    stock_disponible=stock_disp,
+                ))
+
+        return ValidarStockResponse(
+            valido=len(errores) == 0,
+            detalles=errores,
+        )
+
+    @staticmethod
+    def actualizar_detalle(session: Session, pedido_id: int, producto_id: int, cantidad: int) -> Pedido:
+        """Actualiza o elimina un detalle de pedido PENDIENTE. cantidad=0 lo elimina."""
+        from ..DetallePedido.models import DetallePedido
+
+        db_pedido = PedidoService.get_by_id(session, pedido_id)
+        if not db_pedido:
+            raise HTTPException(status_code=404, detail="Pedido no encontrado")
+        if db_pedido.estado_codigo != "PENDIENTE":
+            raise HTTPException(status_code=400, detail="Solo se pueden modificar detalles en pedidos PENDIENTE")
+
+        with VentasPagosTrazabilidadUnitOfWork(session) as uow:
+            stmt = select(DetallePedido).where(
+                DetallePedido.pedido_id == pedido_id,
+                DetallePedido.producto_id == producto_id,
+            )
+            detalle = session.exec(stmt).first()
+            if not detalle:
+                raise HTTPException(status_code=404, detail="Detalle no encontrado en el pedido")
+
+            if cantidad <= 0:
+                uow.delete(detalle)
+            else:
+                detalle.cantidad = cantidad
+                detalle.subtotal_snap = detalle.precio_snapshot * cantidad
+                uow.add(detalle)
+
+            # Recalcular total del pedido
+            detalles_restantes = session.exec(
+                select(DetallePedido).where(DetallePedido.pedido_id == pedido_id)
+            ).all()
+            nuevo_subtotal = sum(d.subtotal_snap for d in detalles_restantes)
+            db_pedido = uow.pedidos.get_by_id(pedido_id)
+            db_pedido.subtotal = nuevo_subtotal
+            db_pedido.total = nuevo_subtotal - db_pedido.descuento + (db_pedido.costo_envio or Decimal('0.00'))
+            if db_pedido.total < 0:
+                db_pedido.total = Decimal('0.00')
+            uow.add(db_pedido)
+            uow.refresh(db_pedido)
+            return db_pedido
+
+    @staticmethod
+    def avanzar_estado(session: Session, pedido_id: int, usuario) -> tuple[Pedido, str]:
         """Avanza el pedido al siguiente estado según la FSM.
         Registra el cambio en HistorialEstadoPedido (INSERT-only).
+        Retorna (pedido, estado_anterior).
         """
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
             db_pedido = uow.pedidos.get_by_id(pedido_id)
             if not db_pedido:
                 raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
-            estado_actual = db_pedido.estado_codigo
-            if estado_actual in ESTADOS_TERMINALES:
+            estado_anterior = db_pedido.estado_codigo
+            if estado_anterior in ESTADOS_TERMINALES:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"El pedido ya está en estado terminal '{estado_actual}'",
+                    detail=f"El pedido ya está en estado terminal '{estado_anterior}'",
                 )
 
-            if estado_actual not in TRANSICIONES_VALIDAS:
+            if estado_anterior not in TRANSICIONES_VALIDAS:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"No hay transición definida desde '{estado_actual}'",
+                    detail=f"No hay transición definida desde '{estado_anterior}'",
                 )
 
-            estado_siguiente = TRANSICIONES_VALIDAS[estado_actual]
+            estado_siguiente = TRANSICIONES_VALIDAS[estado_anterior]
 
             # ── Validar stock antes de confirmar ──
             if estado_siguiente == "CONFIRMADO":
@@ -190,32 +248,15 @@ class PedidoService:
 
                 errores_stock: list[dict] = []
                 for det in db_pedido.detalles:
-                    if det.medida_snapshot:
-                        stmt_med = select(ProductoMedida).where(
-                            ProductoMedida.producto_id == det.producto_id,
-                            ProductoMedida.nombre == det.medida_snapshot,
-                        )
-                        medida = session.exec(stmt_med).first()
-                        stock_disp = medida.stock if medida else 0
-                        if stock_disp < det.cantidad:
-                            errores_stock.append({
-                                "producto_id": det.producto_id,
-                                "nombre_producto": det.nombre_snapshot,
-                                "medida": det.medida_snapshot,
-                                "cantidad_solicitada": det.cantidad,
-                                "stock_disponible": stock_disp,
-                            })
-                    else:
-                        prod = session.get(Producto, det.producto_id)
-                        stock_disp = prod.stock_cantidad if prod else 0
-                        if stock_disp < det.cantidad:
-                            errores_stock.append({
-                                "producto_id": det.producto_id,
-                                "nombre_producto": det.nombre_snapshot,
-                                "medida": None,
-                                "cantidad_solicitada": det.cantidad,
-                                "stock_disponible": stock_disp,
-                            })
+                    prod = session.get(Producto, det.producto_id)
+                    stock_disp = prod.stock_cantidad if prod else 0
+                    if stock_disp < det.cantidad:
+                        errores_stock.append({
+                            "producto_id": det.producto_id,
+                            "nombre_producto": det.nombre_snapshot,
+                            "cantidad_solicitada": det.cantidad,
+                            "stock_disponible": stock_disp,
+                        })
 
                 if errores_stock:
                     raise HTTPException(
@@ -227,42 +268,72 @@ class PedidoService:
                         },
                     )
 
+                # ── Validar stock de ingredientes ──
+                from modules.CatalogoDeProductos.producto_ingrediente import ProductoIngrediente
+                from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
+
+                errores_ing_stock: list[dict] = []
+                for det in db_pedido.detalles:
+                    stmt_pi = select(ProductoIngrediente).where(
+                        ProductoIngrediente.producto_id == det.producto_id
+                    )
+                    for pi in session.exec(stmt_pi):
+                        cantidad_needed = pi.cantidad * det.cantidad
+                        ing = session.get(Ingrediente, pi.ingrediente_id)
+                        if ing and ing.stock_actual < cantidad_needed:
+                            errores_ing_stock.append({
+                                "ingrediente": ing.nombre,
+                                "disponible": ing.stock_actual,
+                                "requerido": int(math.ceil(cantidad_needed)),
+                            })
+
+                if errores_ing_stock:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail={
+                            "error": "stock_insuficiente",
+                            "ingredientes": errores_ing_stock,
+                        },
+                    )
+
                 # ── Descontar stock al confirmar pedido ──
                 for det in db_pedido.detalles:
-                    if det.medida_snapshot:
-                        stmt_med = select(ProductoMedida).where(
-                            ProductoMedida.producto_id == det.producto_id,
-                            ProductoMedida.nombre == det.medida_snapshot,
-                        )
-                        medida = session.exec(stmt_med).first()
-                        if medida:
-                            medida.stock = max(0, medida.stock - det.cantidad)
-                            session.add(medida)
-                    else:
-                        prod = session.get(Producto, det.producto_id)
-                        if prod:
-                            prod.stock_cantidad = max(0, prod.stock_cantidad - det.cantidad)
-                            session.add(prod)
+                    prod = session.get(Producto, det.producto_id)
+                    if prod:
+                        prod.stock_cantidad = max(0, prod.stock_cantidad - det.cantidad)
+                        session.add(prod)
 
-            # Registrar en historial (INSERT-only)
-            uow.session.add(HistorialEstadoPedido(
-                pedido_id=db_pedido.id,
-                estado_desde=estado_actual,
-                estado_hacia=estado_siguiente,
-                usuario_id=usuario.id if hasattr(usuario, 'id') else None,
-            ))
+                # ── Descontar stock de ingredientes ──
+                from modules.CatalogoDeProductos.producto_ingrediente import ProductoIngrediente
+                from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
 
-            # Actualizar pedido
-            db_pedido.estado_codigo = estado_siguiente
-            uow.pedidos.add(db_pedido)
-            uow.commit()
-            uow.pedidos.refresh(db_pedido)
-            return db_pedido
+                for det in db_pedido.detalles:
+                    stmt_pi = select(ProductoIngrediente).where(
+                        ProductoIngrediente.producto_id == det.producto_id
+                    )
+                    for pi in session.exec(stmt_pi):
+                        cantidad_a_descontar = int(math.ceil(pi.cantidad * det.cantidad))
+                        ing = session.get(Ingrediente, pi.ingrediente_id)
+                        if ing:
+                            ing.stock_actual = max(0, ing.stock_actual - cantidad_a_descontar)
+                            session.add(ing)
+
+            # ── Transición atómica via UoW ──
+            usuario_id = usuario.id if hasattr(usuario, 'id') else None
+            uow.avanzar_estado(
+                pedido=db_pedido,
+                estado_anterior=estado_anterior,
+                estado_siguiente=estado_siguiente,
+                usuario_id=usuario_id,
+            )
+
+            uow.refresh(db_pedido)
+            return (db_pedido, estado_anterior)
 
     @staticmethod
     def cancelar_pedido(session: Session, pedido_id: int, usuario) -> Pedido:
         """Cancela un pedido. ADMIN/PEDIDOS siempre pueden.
-        Usuario común solo si el estado es anterior a EN_CAMINO.
+        Usuario común solo en PENDIENTE o CONFIRMADO.
         """
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
             db_pedido = uow.pedidos.get_by_id(pedido_id)
@@ -281,27 +352,24 @@ class PedidoService:
             es_admin = "ADMIN" in user_roles or "PEDIDOS" in user_roles
 
             if not es_admin:
-                # Usuario común: solo puede cancelar si está antes de EN_CAMINO
-                ordenes = {"PENDIENTE": 1, "CONFIRMADO": 2, "EN_PREP": 3, "EN_CAMINO": 4, "ENTREGADO": 5}
-                if ordenes.get(estado_actual, 99) >= 4:  # EN_CAMINO o posterior
+                # Usuario común: solo puede cancelar si está en PENDIENTE o CONFIRMADO
+                estados_permitidos_cliente = {"PENDIENTE", "CONFIRMADO"}
+                if estado_actual not in estados_permitidos_cliente:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="No puedes cancelar un pedido que ya está en camino o entregado",
+                        detail="No puedes cancelar un pedido que ya está en preparación o en camino",
                     )
 
-            # Registrar en historial (INSERT-only)
-            uow.session.add(HistorialEstadoPedido(
-                pedido_id=db_pedido.id,
-                estado_desde=estado_actual,
-                estado_hacia="CANCELADO",
-                usuario_id=usuario.id if hasattr(usuario, 'id') else None,
+            usuario_id = usuario.id if hasattr(usuario, 'id') else None
+            uow.avanzar_estado(
+                pedido=db_pedido,
+                estado_anterior=estado_actual,
+                estado_siguiente="CANCELADO",
+                usuario_id=usuario_id,
                 motivo="Cancelado por usuario" if not es_admin else None,
-            ))
+            )
 
-            db_pedido.estado_codigo = "CANCELADO"
-            uow.pedidos.add(db_pedido)
-            uow.commit()
-            uow.pedidos.refresh(db_pedido)
+            uow.refresh(db_pedido)
             return db_pedido
 
     @staticmethod
@@ -313,9 +381,8 @@ class PedidoService:
             values = data.model_dump(exclude_unset=True)
             for key, value in values.items():
                 setattr(db_pedido, key, value)
-            uow.pedidos.add(db_pedido)
-            uow.commit()
-            uow.pedidos.refresh(db_pedido)
+            uow.add(db_pedido)
+            uow.refresh(db_pedido)
             return db_pedido
 
     @staticmethod
@@ -325,6 +392,5 @@ class PedidoService:
             if not db_pedido:
                 return False
             db_pedido.deleted_at = get_utc_now()
-            uow.pedidos.add(db_pedido)
-            uow.commit()
+            uow.add(db_pedido)
             return True

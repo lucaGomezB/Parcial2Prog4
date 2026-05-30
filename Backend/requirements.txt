@@ -16,3 +16,6 @@ email-validator      # Para EmailStr de Pydantic
 # JWT Authentication
 PyJWT
 bcrypt
+
+# Rate Limiting
+slowapi

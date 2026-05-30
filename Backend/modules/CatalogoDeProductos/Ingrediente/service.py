@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from sqlmodel import Session
 from typing import List, Optional
 from fastapi import HTTPException, status
@@ -6,6 +8,7 @@ from .models import Ingrediente
 from .schemas import IngredienteCreate, IngredienteUpdate
 from models.base import get_utc_now
 from ..uow import CatalogoDeProductosUnitOfWork
+from ..Producto.service import ProductoService
 
 class IngredienteService:
     @staticmethod
@@ -34,6 +37,38 @@ class IngredienteService:
             return uow.ingredientes.get_by_id(ingrediente_id)
 
     @staticmethod
+    def actualizar_precio(session: Session, ingrediente_id: int, precio: Decimal) -> Ingrediente:
+        with CatalogoDeProductosUnitOfWork(session) as uow:
+            db_ingrediente = uow.ingredientes.get_by_id(ingrediente_id)
+            if not db_ingrediente:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Ingrediente no encontrado",
+                )
+            db_ingrediente.precio_actual = precio
+            uow.ingredientes.add(db_ingrediente)
+            uow.commit()
+            uow.ingredientes.refresh(db_ingrediente)
+        # Disparar recalculo de precios en todos los productos que usan este ingrediente
+        ProductoService.recalcular_precio_productos_afectados(session, ingrediente_id)
+        return db_ingrediente
+
+    @staticmethod
+    def actualizar_stock(session: Session, ingrediente_id: int, stock: int) -> Ingrediente:
+        with CatalogoDeProductosUnitOfWork(session) as uow:
+            db_ingrediente = uow.ingredientes.get_by_id(ingrediente_id)
+            if not db_ingrediente:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Ingrediente no encontrado",
+                )
+            db_ingrediente.stock_actual = stock
+            uow.ingredientes.add(db_ingrediente)
+            uow.commit()
+            uow.ingredientes.refresh(db_ingrediente)
+        return db_ingrediente
+
+    @staticmethod
     def update(session: Session, ingrediente_id: int, data: IngredienteUpdate) -> Optional[Ingrediente]:
         with CatalogoDeProductosUnitOfWork(session) as uow:
             db_ingrediente = uow.ingredientes.get_by_id(ingrediente_id)
@@ -47,7 +82,10 @@ class IngredienteService:
             uow.ingredientes.add(db_ingrediente)
             uow.commit()
             uow.ingredientes.refresh(db_ingrediente)
-            return db_ingrediente
+        # Si se actualizó precio_actual, disparar recalculo de precios
+        if 'precio_actual' in data.model_dump(exclude_unset=True):
+            ProductoService.recalcular_precio_productos_afectados(session, ingrediente_id)
+        return db_ingrediente
 
     @staticmethod
     def soft_delete(session: Session, ingrediente_id: int) -> bool:

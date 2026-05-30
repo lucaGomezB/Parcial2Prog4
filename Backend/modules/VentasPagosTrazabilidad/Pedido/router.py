@@ -1,19 +1,16 @@
-from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlmodel import Session, select
+from sqlmodel import Session
 from typing import List
 from core.database import get_session
 from modules.IdentidadYAcceso.Auth.dependencies import require_roles, get_current_user
 from modules.IdentidadYAcceso.Usuario.models import Usuario
-from ..HistorialEstadoPedido.models import HistorialEstadoPedido
-from ..uow import VentasPagosTrazabilidadUnitOfWork
 from .service import PedidoService
 from .schemas import (
     PedidoRead, PedidoCreate, PedidoUpdate,
     PedidoAvanzarResponse, PedidoCancelarResponse,
     DetallePedidoUpdate,
+    ValidarStockInput, ValidarStockResponse,
 )
-from ..DetallePedido.models import DetallePedido
 
 router = APIRouter(prefix="/pedidos", tags=["Pedidos"])
 
@@ -107,12 +104,24 @@ def create(
     # Auto-advance to CONFIRMADO for client users
     if not es_gestor and auto_confirmar:
         try:
-            pedido = PedidoService.avanzar_estado(session, pedido.id, current_user)
+            pedido, _ = PedidoService.avanzar_estado(session, pedido.id, current_user)
+        except HTTPException:
+            raise
         except Exception:
-            # If auto-advance fails, the order stays in PENDIENTE
+            # If auto-advance fails for non-HTTP errors, the order stays in PENDIENTE
             pass
 
     return pedido
+
+
+@router.post("/validar-stock", response_model=ValidarStockResponse)
+def validar_stock(
+    data: ValidarStockInput,
+    session: Session = Depends(get_session),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Pre-validate stock availability for a set of items without creating an order."""
+    return PedidoService.validar_stock_items(session, data)
 
 
 @router.post("/{pedido_id}/avanzar", response_model=PedidoAvanzarResponse,
@@ -123,15 +132,7 @@ def avanzar(
     current_user: Usuario = Depends(get_current_user),
 ):
     """Advance the order to the next FSM state. Requires ADMIN or PEDIDOS role."""
-    pedido = PedidoService.avanzar_estado(session, pedido_id, current_user)
-    # Obtener el estado anterior desde el historial (último registro)
-    historial = session.exec(
-        select(HistorialEstadoPedido)
-        .where(HistorialEstadoPedido.pedido_id == pedido_id)
-        .order_by(HistorialEstadoPedido.id.desc())
-        .limit(1)
-    ).first()
-    estado_anterior = historial.estado_desde if historial else "DESCONOCIDO"
+    pedido, estado_anterior = PedidoService.avanzar_estado(session, pedido_id, current_user)
     return PedidoAvanzarResponse(
         id=pedido.id,
         estado_anterior=estado_anterior,
@@ -146,7 +147,7 @@ def cancelar(
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """Cancel an order. ADMIN/PEDIDOS always; regular users only before EN_CAMINO."""
+    """Cancel an order. ADMIN/PEDIDOS always; regular users only in PENDIENTE or CONFIRMADO."""
     pedido = PedidoService.cancelar_pedido(session, pedido_id, current_user)
     return PedidoCancelarResponse(
         id=pedido.id,
@@ -175,44 +176,7 @@ def actualizar_detalle(
     session: Session = Depends(get_session),
 ):
     """Update (or remove) a detail line on a PENDIENTE order. cantidad=0 removes it."""
-    pedido = PedidoService.get_by_id(session, pedido_id)
-    if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido no encontrado")
-    if pedido.estado_codigo != "PENDIENTE":
-        raise HTTPException(status_code=400, detail="Solo se pueden modificar detalles en pedidos PENDIENTE")
-
-    with VentasPagosTrazabilidadUnitOfWork(session) as uow:
-        stmt = select(DetallePedido).where(
-            DetallePedido.pedido_id == pedido_id,
-            DetallePedido.producto_id == producto_id,
-        )
-        detalle = session.exec(stmt).first()
-        if not detalle:
-            raise HTTPException(status_code=404, detail="Detalle no encontrado en el pedido")
-
-        if data.cantidad <= 0:
-            # Eliminar el detalle
-            session.delete(detalle)
-        else:
-            # Actualizar cantidad y subtotal
-            detalle.cantidad = data.cantidad
-            detalle.subtotal_snap = detalle.precio_snapshot * data.cantidad
-            session.add(detalle)
-
-        # Recalcular total del pedido
-        detalles_restantes = session.exec(
-            select(DetallePedido).where(DetallePedido.pedido_id == pedido_id)
-        ).all()
-        nuevo_subtotal = sum(d.subtotal_snap for d in detalles_restantes)
-        db_pedido = uow.pedidos.get_by_id(pedido_id)
-        db_pedido.subtotal = nuevo_subtotal
-        db_pedido.total = nuevo_subtotal - db_pedido.descuento + (db_pedido.costo_envio or Decimal('0.00'))
-        if db_pedido.total < 0:
-            db_pedido.total = Decimal('0.00')
-        uow.pedidos.add(db_pedido)
-        uow.commit()
-        uow.pedidos.refresh(db_pedido)
-        return db_pedido
+    return PedidoService.actualizar_detalle(session, pedido_id, producto_id, data.cantidad)
 
 
 @router.delete("/{pedido_id}", status_code=status.HTTP_204_NO_CONTENT,

@@ -2,27 +2,11 @@ from typing import Optional, List
 from decimal import Decimal
 from pydantic import ConfigDict, field_validator
 from sqlmodel import SQLModel
-from .models import ProductoBase
 
-class ProductoMedidaCreate(SQLModel):
-    nombre: str
-    precio: Decimal
-    stock: int = 0
-    orden: int = 0
-    disponible: bool = True
-
-class ProductoMedidaRead(SQLModel):
-    id: int
-    producto_id: int
-    nombre: str
-    precio: Decimal
-    stock: int
-    orden: int
-    disponible: bool
-    model_config = ConfigDict(from_attributes=True)
 
 class IngredienteAsignado(SQLModel):
     ingrediente_id: int
+    cantidad: Decimal = 1
     es_removible: bool = True
     es_principal: bool = False
     orden: int = 0
@@ -32,11 +16,17 @@ class CategoriaAsignada(SQLModel):
     es_principal: bool = False
 
 
-class ProductoCreate(ProductoBase):
+class ProductoCreate(SQLModel):
+    nombre: str
+    descripcion: Optional[str] = None
+    precio_base: Decimal = Decimal('0.00')
+    imagenes_url: List[str] = []
+    stock_cantidad: int = 0
+    tiempo_prep_min: int = 0
+    disponible: bool = True
     categorias_ids: List[int] = []
     categoria_principal_id: Optional[int] = None
     ingredientes: Optional[List[IngredienteAsignado]] = []
-    medidas: Optional[List[ProductoMedidaCreate]] = []
 
     @field_validator('categorias_ids')
     @classmethod
@@ -45,22 +35,34 @@ class ProductoCreate(ProductoBase):
             raise ValueError('Se requiere al menos 1 categoría para crear un producto')
         return v
 
-class ProductoUpdate(ProductoBase):
+
+class ProductoUpdate(SQLModel):
     nombre: Optional[str] = None
+    descripcion: Optional[str] = None
     precio_base: Optional[Decimal] = None
     stock_cantidad: Optional[int] = None
+    tiempo_prep_min: Optional[int] = None
     disponible: Optional[bool] = None
     categorias_ids: Optional[List[int]] = None
 
-class ProductoRead(ProductoBase):
+
+class ProductoRead(SQLModel):
     id: int
-    medidas: List[ProductoMedidaRead] = []
+    nombre: str
+    descripcion: Optional[str] = None
+    precio_base: Decimal
+    imagenes_url: List[str] = []
+    stock_cantidad: int = 0
+    tiempo_prep_min: int = 0
+    disponible: bool = True
+    tiene_ingredientes: bool = False
     model_config = ConfigDict(from_attributes=True)
 
 class ProductoIngredienteRead(SQLModel):
     """Schema para devolver un ingrediente asociado a un producto."""
     ingrediente_id: int
     ingrediente_nombre: str
+    cantidad: Decimal
     es_removible: bool
     es_principal: bool
     orden: int

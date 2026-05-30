@@ -19,7 +19,7 @@ from modules.IdentidadYAcceso.Usuario.service import get_password_hash
 # ── Catálogo ──
 from modules.CatalogoDeProductos.Categoria.models import Categoria
 from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
-from modules.CatalogoDeProductos.Producto.models import Producto, ProductoMedida
+from modules.CatalogoDeProductos.Producto.models import Producto
 from modules.CatalogoDeProductos.producto_categoria import ProductoCategoria
 from modules.CatalogoDeProductos.producto_ingrediente import ProductoIngrediente
 
@@ -50,66 +50,66 @@ USERS_SEED = [
 ]
 
 CATEGORIAS_SEED = [
-    # (nombre, descripción, nombre_del_padre, orden_display, es_primordial)
-    ("Bebidas",             "Todas las bebidas",             None,             1, True),
-    ("Bebidas Frías",       "Gaseosas, jugos, aguas",        "Bebidas",        1, False),
-    ("Bebidas Calientes",   "Café, té, chocolate",           "Bebidas",        2, False),
-    ("Sandwichs",           "Sandwichs fríos y calientes",   None,             2, False),
-    ("Sandwichs Calientes", "Tostados, hamburguesas",        "Sandwichs",      1, False),
-    ("Sandwichs Fríos",     "Sandwich de miga, ciabatta",    "Sandwichs",      2, False),
-    ("Guarniciones",        "Papas fritas, aros de cebolla", None,             3, False),
-    ("Postres",             "Flan, helado, tortas",          None,             4, False),
-    ("Pizzas",              "Pizzas enteras y porciones",    None,             5, True),
-    ("Tartas",              "Tartas dulces y saladas",       None,             6, True),
+    # (nombre, descripción, nombre_del_padre, orden_display)
+    ("Bebidas",             "Todas las bebidas",             None,             1),
+    ("Bebidas Frías",       "Gaseosas, jugos, aguas",        "Bebidas",        1),
+    ("Bebidas Calientes",   "Café, té, chocolate",           "Bebidas",        2),
+    ("Sandwichs",           "Sandwichs fríos y calientes",   None,             2),
+    ("Sandwichs Calientes", "Tostados, hamburguesas",        "Sandwichs",      1),
+    ("Sandwichs Fríos",     "Sandwich de miga, ciabatta",    "Sandwichs",      2),
+    ("Guarniciones",        "Papas fritas, aros de cebolla", None,             3),
+    ("Postres",             "Flan, helado, tortas",          None,             4),
+    ("Pizzas",              "Pizzas enteras y porciones",    None,             5),
+    ("Tartas",              "Tartas dulces y saladas",       None,             6),
 ]
 
 INGREDIENTES_SEED = [
-    # (nombre, es_alergeno)
-    ("Pan de hamburguesa",  False),
-    ("Pan de miga",         False),
-    ("Pan ciabatta",        False),
-    ("Carne de res",        False),
-    ("Pechuga de pollo",    False),
-    ("Queso cheddar",       True),   # lácteo
-    ("Queso mozzarella",    True),
-    ("Lechuga",             False),
-    ("Tomate",              False),
-    ("Cebolla",             False),
-    ("Huevo",               True),   # alérgeno común
-    ("Mayonesa",            True),   # huevo
-    ("Mostaza",             False),
-    ("Ketchup",             False),
-    ("Papa",                False),
-    ("Aceite",              False),
-    ("Sal",                 False),
-    ("Café molido",         False),
-    ("Leche",               True),   # lactosa
-    ("Crema de leche",      True),
-    ("Chocolate",           True),   # puede tener leche/soja
-    ("Harina de trigo",     True),   # gluten
-    ("Azúcar",              False),
-    ("Hielo",               False),
-    ("Gasificación",        False),
-    ("Agua",                False),
-    ("Levadura",            False),
-    ("Manteca",             True),   # lactosa
-    ("Dulce de leche",      True),
-    ("Vainilla",            False),
+    # (nombre, es_alergeno, precio_actual, stock_actual)
+    ("Pan de hamburguesa",  False, Decimal("50"),   500),
+    ("Pan de miga",         False, Decimal("60"),   300),
+    ("Pan ciabatta",        False, Decimal("80"),   200),
+    ("Carne de res",        False, Decimal("200"),  200),
+    ("Pechuga de pollo",    False, Decimal("180"),  250),
+    ("Queso cheddar",       True,  Decimal("80"),   300),
+    ("Queso mozzarella",    True,  Decimal("90"),   250),
+    ("Lechuga",             False, Decimal("30"),   150),
+    ("Tomate",              False, Decimal("25"),   180),
+    ("Cebolla",             False, Decimal("20"),   200),
+    ("Huevo",               True,  Decimal("15"),   500),
+    ("Mayonesa",            True,  Decimal("40"),   200),
+    ("Mostaza",             False, Decimal("35"),   150),
+    ("Ketchup",             False, Decimal("30"),   200),
+    ("Papa",                False, Decimal("45"),   300),
+    ("Aceite",              False, Decimal("60"),   200),
+    ("Sal",                 False, Decimal("10"),   500),
+    ("Café molido",         False, Decimal("150"),  100),
+    ("Leche",               True,  Decimal("70"),   200),
+    ("Crema de leche",      True,  Decimal("90"),   150),
+    ("Chocolate",           True,  Decimal("120"),  100),
+    ("Harina de trigo",     True,  Decimal("40"),   400),
+    ("Azúcar",              False, Decimal("35"),   300),
+    ("Hielo",               False, Decimal("5"),    1000),
+    ("Gasificación",        False, Decimal("10"),   500),
+    ("Agua",                False, Decimal("5"),    1000),
+    ("Levadura",            False, Decimal("25"),   200),
+    ("Manteca",             True,  Decimal("80"),   150),
+    ("Dulce de leche",      True,  Decimal("110"),  100),
+    ("Vainilla",            False, Decimal("200"),  50),
 ]
 
 PRODUCTOS_SEED = [
     # (nombre, descripción, precio, tiempo_min, disponible,
     #   categorias=[(nombre_cat, es_principal)],
-    #   ingredientes=[(nombre_ing, es_removible, es_principal, orden)])
+    #   ingredientes=[(nombre_ing, es_removible, es_principal, orden, cantidad)])
     dict(
         nombre="Coca Cola 500ml",
         descripcion="Gaseosa sabor cola",
         precio=Decimal("1200.00"), tiempo=1, disponible=True,
         categorias=[("Bebidas Frías", True)],
         ingredientes=[
-            ("Agua", False, False, 1),
-            ("Gasificación", False, False, 2),
-            ("Azúcar", False, False, 3),
+            ("Agua", False, False, 1, Decimal("0.5")),
+            ("Gasificación", False, False, 2, Decimal("0.1")),
+            ("Azúcar", False, False, 3, Decimal("0.2")),
         ],
     ),
     dict(
@@ -117,7 +117,10 @@ PRODUCTOS_SEED = [
         descripcion="Café expreso con leche cremada",
         precio=Decimal("1500.00"), tiempo=5, disponible=True,
         categorias=[("Bebidas Calientes", True)],
-        ingredientes=[("Café molido", False, True, 1), ("Leche", True, False, 2)],
+        ingredientes=[
+            ("Café molido", False, True, 1, Decimal("0.05")),
+            ("Leche", True, False, 2, Decimal("0.2")),
+        ],
     ),
     dict(
         nombre="Hamburguesa Clásica",
@@ -125,11 +128,11 @@ PRODUCTOS_SEED = [
         precio=Decimal("4500.00"), tiempo=12, disponible=True,
         categorias=[("Sandwichs Calientes", True)],
         ingredientes=[
-            ("Pan de hamburguesa", False, False, 1),
-            ("Carne de res", False, True, 2),
-            ("Queso cheddar", True, False, 3),
-            ("Lechuga", True, False, 4),
-            ("Tomate", True, False, 5),
+            ("Pan de hamburguesa", False, False, 1, Decimal("1")),
+            ("Carne de res", False, True, 2, Decimal("1")),
+            ("Queso cheddar", True, False, 3, Decimal("2")),
+            ("Lechuga", True, False, 4, Decimal("0.5")),
+            ("Tomate", True, False, 5, Decimal("0.5")),
         ],
     ),
     dict(
@@ -138,9 +141,9 @@ PRODUCTOS_SEED = [
         precio=Decimal("2800.00"), tiempo=5, disponible=True,
         categorias=[("Sandwichs Fríos", True)],
         ingredientes=[
-            ("Pan de miga", False, False, 1),
-            ("Queso mozzarella", False, True, 2),
-            ("Mayonesa", True, False, 3),
+            ("Pan de miga", False, False, 1, Decimal("2")),
+            ("Queso mozzarella", False, True, 2, Decimal("0.15")),
+            ("Mayonesa", True, False, 3, Decimal("0.05")),
         ],
     ),
     dict(
@@ -149,9 +152,9 @@ PRODUCTOS_SEED = [
         precio=Decimal("2200.00"), tiempo=8, disponible=True,
         categorias=[("Guarniciones", True)],
         ingredientes=[
-            ("Papa", False, True, 1),
-            ("Aceite", False, False, 2),
-            ("Sal", False, False, 3),
+            ("Papa", False, True, 1, Decimal("0.5")),
+            ("Aceite", False, False, 2, Decimal("0.1")),
+            ("Sal", False, False, 3, Decimal("0.02")),
         ],
     ),
     dict(
@@ -160,57 +163,43 @@ PRODUCTOS_SEED = [
         precio=Decimal("2500.00"), tiempo=2, disponible=True,
         categorias=[("Postres", True)],
         ingredientes=[
-            ("Huevo", False, True, 1),
-            ("Leche", False, False, 2),
-            ("Dulce de leche", True, False, 3),
-            ("Vainilla", False, False, 4),
+            ("Huevo", False, True, 1, Decimal("2")),
+            ("Leche", False, False, 2, Decimal("0.25")),
+            ("Dulce de leche", True, False, 3, Decimal("0.1")),
+            ("Vainilla", False, False, 4, Decimal("0.02")),
         ],
     ),
     dict(
         nombre="Coca Cola",
         descripcion="Gaseosa sabor cola",
-        precio=Decimal("0.00"), tiempo=1, disponible=True,
+        precio=Decimal("1200.00"), tiempo=1, disponible=True,
         categorias=[("Bebidas Frías", True)],
         ingredientes=[
-            ("Agua", False, False, 1),
-            ("Gasificación", False, False, 2),
-            ("Azúcar", False, False, 3),
-        ],
-        medidas=[
-            ("250ml", Decimal("1500.00"), 10, 1),
-            ("500ml", Decimal("2500.00"), 5, 2),
-            ("1L", Decimal("4000.00"), 2, 3),
+            ("Agua", False, False, 1, Decimal("0.5")),
+            ("Gasificación", False, False, 2, Decimal("0.1")),
+            ("Azúcar", False, False, 3, Decimal("0.2")),
         ],
     ),
     dict(
         nombre="Pizza Muzzarella",
         descripcion="Pizza clásica con mozzarella y salsa",
-        precio=Decimal("0.00"), tiempo=15, disponible=True,
+        precio=Decimal("3000.00"), tiempo=15, disponible=True,
         categorias=[("Pizzas", True)],
         ingredientes=[
-            ("Harina de trigo", False, False, 1),
-            ("Queso mozzarella", False, True, 2),
-            ("Tomate", False, False, 3),
-        ],
-        medidas=[
-            ("1 porción", Decimal("3000.00"), 20, 1),
-            ("entera", Decimal("12000.00"), 5, 2),
+            ("Harina de trigo", False, False, 1, Decimal("0.3")),
+            ("Queso mozzarella", False, True, 2, Decimal("0.2")),
+            ("Tomate", False, False, 3, Decimal("0.15")),
         ],
     ),
     dict(
         nombre="Tarta de Jamón y Queso",
         descripcion="Tarta rellena de jamón cocido y queso",
-        precio=Decimal("0.00"), tiempo=12, disponible=True,
+        precio=Decimal("2500.00"), tiempo=12, disponible=True,
         categorias=[("Tartas", True)],
         ingredientes=[
-            ("Harina de trigo", False, True, 1),
-            ("Huevo", False, False, 2),
-            ("Queso mozzarella", False, False, 3),
-        ],
-        medidas=[
-            ("1 porción", Decimal("2500.00"), 15, 1),
-            ("media", Decimal("7000.00"), 8, 2),
-            ("entera", Decimal("12000.00"), 3, 3),
+            ("Harina de trigo", False, True, 1, Decimal("0.3")),
+            ("Huevo", False, False, 2, Decimal("2")),
+            ("Queso mozzarella", False, False, 3, Decimal("0.15")),
         ],
     ),
 ]
@@ -281,12 +270,12 @@ def seed_categorias(session: Session):
     created: dict[str, Categoria] = {}
 
     # Primera pasada: crear todas
-    for nombre, desc, parent_nombre, orden, primordial in CATEGORIAS_SEED:
+    for nombre, desc, parent_nombre, orden in CATEGORIAS_SEED:
         existing = _get_by_name(session, Categoria, nombre)
         if existing:
             created[nombre] = existing
             continue
-        cat = Categoria(nombre=nombre, descripcion=desc, orden_display=orden, es_primordial=primordial)
+        cat = Categoria(nombre=nombre, descripcion=desc, orden_display=orden)
         session.add(cat)
         session.flush()
         created[nombre] = cat
@@ -294,7 +283,7 @@ def seed_categorias(session: Session):
     session.commit()
 
     # Segunda pasada: asignar padres
-    for nombre, desc, parent_nombre, orden, primordial in CATEGORIAS_SEED:
+    for nombre, desc, parent_nombre, orden in CATEGORIAS_SEED:
         if parent_nombre:
             cat = created.get(nombre) or _get_by_name(session, Categoria, nombre)
             parent = created.get(parent_nombre) or _get_by_name(session, Categoria, parent_nombre)
@@ -306,12 +295,17 @@ def seed_categorias(session: Session):
 
 
 def seed_ingredientes(session: Session):
-    for nombre, alergeno in INGREDIENTES_SEED:
+    for nombre, alergeno, precio, stock in INGREDIENTES_SEED:
         existing = _get_by_name(session, Ingrediente, nombre)
         if existing:
             continue
 
-        ing = Ingrediente(nombre=nombre, es_alergeno=alergeno)
+        ing = Ingrediente(
+            nombre=nombre,
+            es_alergeno=alergeno,
+            precio_actual=precio,
+            stock_actual=stock,
+        )
         session.add(ing)
     session.commit()
 
@@ -323,14 +317,8 @@ def seed_productos(session: Session):
         if existing:
             continue
 
-        tiene_medidas = "medidas" in prod_data and prod_data["medidas"]
-
-        if tiene_medidas:
-            stock = 0
-            disponible = any(m[2] > 0 for m in prod_data["medidas"])  # m[2] = stock
-        else:
-            stock = random.randint(0, 500)
-            disponible = prod_data["disponible"] and stock > 0
+        stock = random.randint(0, 500)
+        disponible = prod_data["disponible"] and stock > 0
 
         producto = Producto(
             nombre=prod_data["nombre"],
@@ -354,7 +342,7 @@ def seed_productos(session: Session):
                 ))
 
         # Asignar ingredientes
-        for ing_nombre, removible, principal, orden in prod_data["ingredientes"]:
+        for ing_nombre, removible, principal, orden, cantidad in prod_data["ingredientes"]:
             ing = _get_by_name(session, Ingrediente, ing_nombre)
             if ing:
                 session.add(ProductoIngrediente(
@@ -363,17 +351,7 @@ def seed_productos(session: Session):
                     es_removible=removible,
                     es_principal=principal,
                     orden=orden,
-                ))
-
-        # Crear medidas si el producto las tiene
-        if tiene_medidas:
-            for m_nombre, m_precio, m_stock, m_orden in prod_data["medidas"]:
-                session.add(ProductoMedida(
-                    producto_id=producto.id,
-                    nombre=m_nombre,
-                    precio=m_precio,
-                    stock=m_stock,
-                    orden=m_orden,
+                    cantidad=cantidad,
                 ))
 
     session.commit()

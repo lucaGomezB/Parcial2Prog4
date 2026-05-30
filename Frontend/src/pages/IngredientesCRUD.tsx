@@ -15,6 +15,8 @@ interface State {
   editingId: number | null;
   showForm: boolean;
   form: IngredienteCreate;
+  inlineStockEdit: { id: number; value: string } | null;
+  inlinePrecioEdit: { id: number; value: string } | null;
 }
 
 type Action =
@@ -26,9 +28,15 @@ type Action =
   | { type: "START_EDIT"; payload: Ingrediente }
   | { type: "START_CREATE" }
   | { type: "CLOSE_FORM" }
-  | { type: "UPDATE_FORM"; payload: Partial<IngredienteCreate> };
+  | { type: "UPDATE_FORM"; payload: Partial<IngredienteCreate> }
+  | { type: "START_INLINE_STOCK"; payload: { id: number; currentValue: number } }
+  | { type: "SET_INLINE_STOCK_VALUE"; payload: string }
+  | { type: "CANCEL_INLINE_STOCK" }
+  | { type: "START_INLINE_PRECIO"; payload: { id: number; currentValue: number } }
+  | { type: "SET_INLINE_PRECIO_VALUE"; payload: string }
+  | { type: "CANCEL_INLINE_PRECIO" };
 
-const emptyForm: IngredienteCreate = { nombre: "", es_alergeno: true };
+const emptyForm: IngredienteCreate = { nombre: "", es_alergeno: true, precio_actual: 0, stock_actual: 0 };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -50,14 +58,28 @@ function reducer(state: State, action: Action): State {
         form: {
           nombre: action.payload.nombre,
           es_alergeno: action.payload.es_alergeno,
+          precio_actual: action.payload.precio_actual,
+          stock_actual: action.payload.stock_actual,
         },
       };
     case "START_CREATE":
       return { ...state, editingId: null, showForm: true, form: emptyForm };
     case "CLOSE_FORM":
-      return { ...state, showForm: false, editingId: null, form: emptyForm };
+      return { ...state, showForm: false, editingId: null, form: emptyForm, inlineStockEdit: null, inlinePrecioEdit: null };
     case "UPDATE_FORM":
       return { ...state, form: { ...state.form, ...action.payload } };
+    case "START_INLINE_STOCK":
+      return { ...state, inlineStockEdit: { id: action.payload.id, value: String(action.payload.currentValue) }, inlinePrecioEdit: null };
+    case "SET_INLINE_STOCK_VALUE":
+      return { ...state, inlineStockEdit: state.inlineStockEdit ? { ...state.inlineStockEdit, value: action.payload } : null };
+    case "CANCEL_INLINE_STOCK":
+      return { ...state, inlineStockEdit: null };
+    case "START_INLINE_PRECIO":
+      return { ...state, inlinePrecioEdit: { id: action.payload.id, value: String(action.payload.currentValue) }, inlineStockEdit: null };
+    case "SET_INLINE_PRECIO_VALUE":
+      return { ...state, inlinePrecioEdit: state.inlinePrecioEdit ? { ...state.inlinePrecioEdit, value: action.payload } : null };
+    case "CANCEL_INLINE_PRECIO":
+      return { ...state, inlinePrecioEdit: null };
     default:
       return state;
   }
@@ -72,6 +94,8 @@ const init: State = {
   editingId: null,
   showForm: false,
   form: emptyForm,
+  inlineStockEdit: null,
+  inlinePrecioEdit: null,
 };
 
 export default function IngredientesCRUD() {
@@ -117,10 +141,12 @@ export default function IngredientesCRUD() {
         .filter((i) =>
           i.nombre.toLowerCase().includes(state.filter.toLowerCase())
         )
-        .map(({ id, nombre, es_alergeno }) => ({
+        .map(({ id, nombre, es_alergeno, precio_actual, stock_actual }) => ({
           id,
           nombre,
           es_alergeno: es_alergeno ? "Sí" : "No",
+          precio_actual: `$${precio_actual.toFixed(2)}`,
+          stock_actual,
         }));
 
       if (exportData.length === 0) {
@@ -140,6 +166,32 @@ export default function IngredientesCRUD() {
     if (!confirm("¿Eliminar este ingrediente?")) return;
     try {
       await ingredientesApi.delete(id);
+      fetchData();
+    } catch (err) {
+      dispatch({ type: "SET_ERROR", payload: (err as Error).message });
+    }
+  };
+
+  const handleInlineStockSave = async (id: number) => {
+    if (!state.inlineStockEdit) return;
+    const val = Number(state.inlineStockEdit.value);
+    if (isNaN(val) || val < 0) return;
+    try {
+      await ingredientesApi.updateStock(id, val);
+      dispatch({ type: "CANCEL_INLINE_STOCK" });
+      fetchData();
+    } catch (err) {
+      dispatch({ type: "SET_ERROR", payload: (err as Error).message });
+    }
+  };
+
+  const handleInlinePrecioSave = async (id: number) => {
+    if (!state.inlinePrecioEdit) return;
+    const val = Number(state.inlinePrecioEdit.value);
+    if (isNaN(val) || val < 0) return;
+    try {
+      await ingredientesApi.updatePrecio(id, val);
+      dispatch({ type: "CANCEL_INLINE_PRECIO" });
       fetchData();
     } catch (err) {
       dispatch({ type: "SET_ERROR", payload: (err as Error).message });
@@ -176,6 +228,18 @@ export default function IngredientesCRUD() {
             <input type="checkbox" checked={state.form.es_alergeno ?? true}
               onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { es_alergeno: e.target.checked } })} />
           </div>
+          <div>
+            <label className="block text-sm font-medium">Precio</label>
+            <input type="number" step="0.01" min="0" value={state.form.precio_actual ?? 0}
+              onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { precio_actual: parseFloat(e.target.value) || 0 } })}
+              className="border px-2 py-1 rounded w-28" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium">Stock</label>
+            <input type="number" step="1" min="0" value={state.form.stock_actual ?? 0}
+              onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { stock_actual: parseInt(e.target.value) || 0 } })}
+              className="border px-2 py-1 rounded w-28" />
+          </div>
           <button type="submit" className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer">
             {state.editingId ? "Actualizar" : "Crear"}</button>
           <button type="button" onClick={() => dispatch({ type: "CLOSE_FORM" })}
@@ -188,6 +252,8 @@ export default function IngredientesCRUD() {
             <th className="border p-2 text-left">ID</th>
             <th className="border p-2 text-left">Nombre</th>
             <th className="border p-2 text-left">Alérgeno</th>
+            <th className="border p-2 text-left">Precio</th>
+            <th className="border p-2 text-left">Stock</th>
             <th className="border p-2 text-left">Acciones</th>
           </tr></thead>
           <tbody>
@@ -196,15 +262,53 @@ export default function IngredientesCRUD() {
                 <td className="border p-2">{ing.id}</td>
                 <td className="border p-2">{ing.nombre}</td>
                 <td className="border p-2">{ing.es_alergeno ? "Sí" : "No"}</td>
-                <td className="border p-2 flex gap-1">
-                  <button onClick={() => dispatch({ type: "START_EDIT", payload: ing })}
-                    className="bg-yellow-500 text-white px-2 py-1 rounded text-sm cursor-pointer">Editar</button>
-                  <button onClick={() => handleDelete(ing.id)}
-                    className="bg-red-600 text-white px-2 py-1 rounded text-sm cursor-pointer">Eliminar</button>
+                <td className="border p-2">
+                  {state.inlinePrecioEdit?.id === ing.id ? (
+                    <div className="flex gap-1 items-center">
+                      <input type="number" step="0.01" min="0"
+                        value={state.inlinePrecioEdit.value}
+                        onChange={(e) => dispatch({ type: "SET_INLINE_PRECIO_VALUE", payload: e.target.value })}
+                        className="border px-1 py-0.5 w-20 rounded text-sm" />
+                      <button onClick={() => handleInlinePrecioSave(ing.id)}
+                        className="bg-green-600 text-white px-2 py-0.5 rounded text-xs cursor-pointer">Guardar</button>
+                      <button onClick={() => dispatch({ type: "CANCEL_INLINE_PRECIO" })}
+                        className="bg-gray-400 text-white px-2 py-0.5 rounded text-xs cursor-pointer">✕</button>
+                    </div>
+                  ) : (
+                    `$${ing.precio_actual.toFixed(2)}`
+                  )}
+                </td>
+                <td className="border p-2">
+                  {state.inlineStockEdit?.id === ing.id ? (
+                    <div className="flex gap-1 items-center">
+                      <input type="number" step="1" min="0"
+                        value={state.inlineStockEdit.value}
+                        onChange={(e) => dispatch({ type: "SET_INLINE_STOCK_VALUE", payload: e.target.value })}
+                        className="border px-1 py-0.5 w-20 rounded text-sm" />
+                      <button onClick={() => handleInlineStockSave(ing.id)}
+                        className="bg-green-600 text-white px-2 py-0.5 rounded text-xs cursor-pointer">Guardar</button>
+                      <button onClick={() => dispatch({ type: "CANCEL_INLINE_STOCK" })}
+                        className="bg-gray-400 text-white px-2 py-0.5 rounded text-xs cursor-pointer">✕</button>
+                    </div>
+                  ) : (
+                    ing.stock_actual
+                  )}
+                </td>
+                <td className="border p-2">
+                  <div className="flex gap-1 flex-wrap">
+                    <button onClick={() => dispatch({ type: "START_EDIT", payload: ing })}
+                      className="bg-yellow-500 text-white px-2 py-1 rounded text-sm cursor-pointer">Editar</button>
+                    <button onClick={() => dispatch({ type: "START_INLINE_STOCK", payload: { id: ing.id, currentValue: ing.stock_actual } })}
+                      className="bg-teal-600 text-white px-2 py-1 rounded text-sm cursor-pointer">Stock</button>
+                    <button onClick={() => dispatch({ type: "START_INLINE_PRECIO", payload: { id: ing.id, currentValue: ing.precio_actual } })}
+                      className="bg-purple-600 text-white px-2 py-1 rounded text-sm cursor-pointer">Precio</button>
+                    <button onClick={() => handleDelete(ing.id)}
+                      className="bg-red-600 text-white px-2 py-1 rounded text-sm cursor-pointer">Eliminar</button>
+                  </div>
                 </td>
               </tr>
             ))}
-            {filtered.length === 0 && <tr><td colSpan={4} className="border p-2 text-center text-gray-500">Sin resultados</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={6} className="border p-2 text-center text-gray-500">Sin resultados</td></tr>}
           </tbody>
         </table>
       )}

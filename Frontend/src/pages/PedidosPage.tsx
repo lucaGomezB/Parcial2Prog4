@@ -29,14 +29,14 @@ const ETIQUETAS_ESTADO: Record<string, string> = {
 };
 
 /* ── Popup de Detalles ── */
-function DetallesPopup({ pedido, detalles, onClose }: {
-  pedido: Pedido; detalles: DetallePedido[]; onClose: () => void;
+function DetallesPopup({ pedido, detalles, onClose, esGestor }: {
+  pedido: Pedido; detalles: DetallePedido[]; onClose: () => void; esGestor?: boolean;
 }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white rounded p-6 w-full max-w-2xl max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold">Detalles del Pedido #{pedido.id}</h2>
+          <h2 className="text-lg font-bold">Detalles del Pedido{esGestor ? ` #${pedido.id}` : ""}</h2>
           <button onClick={onClose} className="text-gray-500 text-xl cursor-pointer">✕</button>
         </div>
         <p className="text-sm text-gray-500 mb-3">
@@ -45,7 +45,6 @@ function DetallesPopup({ pedido, detalles, onClose }: {
         <table className="w-full border-collapse border mb-4">
           <thead><tr className="bg-gray-200">
             <th className="border p-2 text-left">Producto</th>
-            <th className="border p-2 text-left">Medida</th>
             <th className="border p-2 text-right">Cantidad</th>
             <th className="border p-2 text-right">Precio Unit.</th>
             <th className="border p-2 text-right">Subtotal</th>
@@ -54,7 +53,6 @@ function DetallesPopup({ pedido, detalles, onClose }: {
             {detalles.map((d, i) => (
               <tr key={i} className="hover:bg-gray-100 border-b">
                 <td className="p-2">{d.nombre_snapshot}</td>
-                <td className="p-2 text-sm">{d.medida_snapshot ?? "-"}</td>
                 <td className="p-2 text-right">{d.cantidad}</td>
                 <td className="p-2 text-right">${parseFloat(d.precio_snapshot).toFixed(2)}</td>
                 <td className="p-2 text-right font-mono font-semibold">${parseFloat(d.subtotal_snap).toFixed(2)}</td>
@@ -110,7 +108,6 @@ function StockModal({ pedido, detalles, onResolve, onCancel }: {
         <table className="w-full border-collapse border mb-4">
           <thead><tr className="bg-gray-200">
             <th className="border p-2 text-left">Producto</th>
-            <th className="border p-2 text-left">Medida</th>
             <th className="border p-2 text-right">Pedido</th>
             <th className="border p-2 text-right">Stock</th>
             <th className="border p-2 text-right">Cantidad</th>
@@ -122,7 +119,6 @@ function StockModal({ pedido, detalles, onResolve, onCancel }: {
               return (
                 <tr key={d.producto_id} className={`border-b ${eliminar ? 'bg-red-50 opacity-60' : ''}`}>
                   <td className="p-2">{d.nombre_producto}</td>
-                  <td className="p-2 text-sm">{d.medida ?? "-"}</td>
                   <td className="p-2 text-right text-red-600">{d.cantidad_solicitada}</td>
                   <td className="p-2 text-right text-green-700">{d.stock_disponible}</td>
                   <td className="p-2 text-right">
@@ -212,18 +208,24 @@ export default function PedidosPage() {
   const esGestor = roles.includes("ADMIN") || roles.includes("PEDIDOS");
   const esHistorial = modo === "historial";
 
+  const [limiteExcedido, setLimiteExcedido] = useState(false);
+
   const loadPedidos = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setLimiteExcedido(false);
     try {
       const data = esHistorial
-        ? (esGestor
-            ? await pedidosApi.getHistorial()
-            : await pedidosApi.getHistorial())
-        : (esGestor
-            ? await pedidosApi.getActivos()
-            : await pedidosApi.getMisPedidos());
-      setPedidos(data);
+        ? await pedidosApi.getHistorial()
+        : await pedidosApi.getActivos();
+
+      // Clientes: solo últimos 10 activos
+      const finalData = esGestor || esHistorial ? data : data.slice(0, 10);
+      if (!esGestor && !esHistorial && data.length > 10) {
+        setLimiteExcedido(true);
+      }
+
+      setPedidos(finalData);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -354,76 +356,83 @@ export default function PedidosPage() {
           )}
         </div>
       ) : (
-        <table className="w-full border-collapse border">
-          <thead><tr className="bg-gray-200">
-            <th className="border p-2 text-left">ID</th>
-            {esGestor && <th className="border p-2 text-left">Usuario</th>}
-            <th className="border p-2 text-left">Fecha</th>
-            <th className="border p-2 text-left">Estado</th>
-            <th className="border p-2 text-right">Total</th>
-            <th className="border p-2 text-left">Acciones</th>
-          </tr></thead>
-          <tbody>
-            {pedidos.map((ped) => (
-              <tr key={ped.id} className="hover:bg-gray-100 border-b">
-                <td className="p-2 font-mono">#{ped.id}</td>
-                {esGestor && (
-                  <td className="p-2">
-                    {ped.usuario ? ped.usuario.email : `ID ${ped.usuario_id}`}
+        <>
+          {limiteExcedido && (
+            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-2 rounded mb-4 text-sm">
+              Mostrando los últimos 10 pedidos activos. Los anteriores están disponibles en el historial.
+            </div>
+          )}
+          <table className="w-full border-collapse border">
+            <thead><tr className="bg-gray-200">
+              {esGestor && <th className="border p-2 text-left">ID</th>}
+              {esGestor && <th className="border p-2 text-left">Usuario</th>}
+              <th className="border p-2 text-left">Fecha</th>
+              <th className="border p-2 text-left">Estado</th>
+              <th className="border p-2 text-right">Total</th>
+              <th className="border p-2 text-left">Acciones</th>
+            </tr></thead>
+            <tbody>
+              {pedidos.map((ped) => (
+                <tr key={ped.id} className="hover:bg-gray-100 border-b">
+                  {esGestor && <td className="p-2 font-mono">#{ped.id}</td>}
+                  {esGestor && (
+                    <td className="p-2">
+                      {ped.usuario ? ped.usuario.email : `ID ${ped.usuario_id}`}
+                    </td>
+                  )}
+                  <td className="p-2 text-sm">
+                    {new Date(ped.created_at).toLocaleDateString("es-AR", {
+                      day: "2-digit", month: "2-digit", year: "numeric",
+                      hour: "2-digit", minute: "2-digit",
+                    })}
                   </td>
-                )}
-                <td className="p-2 text-sm">
-                  {new Date(ped.created_at).toLocaleDateString("es-AR", {
-                    day: "2-digit", month: "2-digit", year: "numeric",
-                    hour: "2-digit", minute: "2-digit",
-                  })}
-                </td>
-                <td className="p-2">
-                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${ESTADOS_COLORES[ped.estado_codigo] || "bg-gray-100"}`}>
-                    {ETIQUETAS_ESTADO[ped.estado_codigo] || ped.estado_codigo}
-                  </span>
-                </td>
-                <td className="p-2 text-right font-mono font-semibold">
-                  ${parseFloat(ped.total).toFixed(2)}
-                </td>
-                <td className="p-2">
-                  <div className="flex gap-1 flex-wrap">
-                    <button
-                      onClick={() => setDetailPopup(ped)}
-                      className="bg-gray-600 text-white px-2 py-1 rounded text-xs cursor-pointer hover:bg-gray-700"
-                    >
-                      Ver Detalles
-                    </button>
-                    {!esHistorial && esGestor && ETIQUETAS_AVANCE[ped.estado_codigo] && (
+                  <td className="p-2">
+                    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${ESTADOS_COLORES[ped.estado_codigo] || "bg-gray-100"}`}>
+                      {ETIQUETAS_ESTADO[ped.estado_codigo] || ped.estado_codigo}
+                    </span>
+                  </td>
+                  <td className="p-2 text-right font-mono font-semibold">
+                    ${parseFloat(ped.total).toFixed(2)}
+                  </td>
+                  <td className="p-2">
+                    <div className="flex gap-1 flex-wrap">
                       <button
-                        onClick={() => handleAvanzar(ped.id)}
-                        className="bg-blue-600 text-white px-2 py-1 rounded text-xs cursor-pointer hover:bg-blue-700"
+                        onClick={() => setDetailPopup(ped)}
+                        className="bg-gray-600 text-white px-2 py-1 rounded text-xs cursor-pointer hover:bg-gray-700"
                       >
-                        {ETIQUETAS_AVANCE[ped.estado_codigo]}
+                        Ver Detalles
                       </button>
-                    )}
-                    {!esHistorial && (
-                      <button
-                        onClick={() => handleCancelar(ped.id)}
-                        className="bg-red-600 text-white px-2 py-1 rounded text-xs cursor-pointer hover:bg-red-700"
-                      >
-                        Cancelar
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                      {!esHistorial && esGestor && ETIQUETAS_AVANCE[ped.estado_codigo] && (
+                        <button
+                          onClick={() => handleAvanzar(ped.id)}
+                          className="bg-blue-600 text-white px-2 py-1 rounded text-xs cursor-pointer hover:bg-blue-700"
+                        >
+                          {ETIQUETAS_AVANCE[ped.estado_codigo]}
+                        </button>
+                      )}
+                      {!esHistorial && (esGestor || ped.estado_codigo !== "EN_PREP") && (
+                        <button
+                          onClick={() => handleCancelar(ped.id)}
+                          className="bg-red-600 text-white px-2 py-1 rounded text-xs cursor-pointer hover:bg-red-700"
+                        >
+                          Cancelar
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
-
       {/* Popup de detalles */}
       {detailPopup && (
         <DetallesPopup
           pedido={detailPopup}
           detalles={detailPopup.detalles ?? []}
           onClose={() => setDetailPopup(null)}
+          esGestor={esGestor}
         />
       )}
 

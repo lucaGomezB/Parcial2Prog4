@@ -10,8 +10,6 @@ export interface CarritoItem {
   nombre: string;
   precio: number;
   cantidad: number;
-  medidaId?: number;
-  medidaNombre?: string;
 }
 
 export function getCarrito(): CarritoItem[] {
@@ -33,32 +31,30 @@ export function addToCart(
   nombre: string,
   precio: number,
   cantidad = 1,
-  medidaId?: number,
-  medidaNombre?: string,
 ): CarritoItem[] {
   const items = getCarrito();
-  const existing = items.find((i) => i.productoId === productoId && i.medidaId === medidaId);
+  const existing = items.find((i) => i.productoId === productoId);
   if (existing) {
     existing.cantidad += cantidad;
   } else {
-    items.push({ productoId, nombre, precio: Number(precio), cantidad, medidaId, medidaNombre });
+    items.push({ productoId, nombre, precio: Number(precio), cantidad });
   }
   guardar(items);
   return items;
 }
 
-export function removeFromCart(productoId: number, medidaId?: number): CarritoItem[] {
+export function removeFromCart(productoId: number): CarritoItem[] {
   const items = getCarrito().filter(
-    (i) => !(i.productoId === productoId && i.medidaId === medidaId)
+    (i) => i.productoId !== productoId
   );
   guardar(items);
   return items;
 }
 
-export function updateCantidad(productoId: number, cantidad: number, medidaId?: number): CarritoItem[] {
+export function updateCantidad(productoId: number, cantidad: number): CarritoItem[] {
   if (cantidad < 1) return getCarrito();
   const items = getCarrito();
-  const item = items.find((i) => i.productoId === productoId && i.medidaId === medidaId);
+  const item = items.find((i) => i.productoId === productoId);
   if (item) {
     item.cantidad = cantidad;
   }

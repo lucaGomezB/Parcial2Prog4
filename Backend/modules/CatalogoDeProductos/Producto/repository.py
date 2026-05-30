@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from sqlmodel import Session, col, select
 
 from models.base_repository import BaseRepository
@@ -28,6 +30,7 @@ class ProductoRepository(BaseRepository[Producto]):
         es_removible: bool,
         es_principal: bool,
         orden: int = 0,
+        cantidad: Decimal = 1,
     ):
         enlace = ProductoIngrediente(
             producto_id=producto_id,
@@ -35,6 +38,7 @@ class ProductoRepository(BaseRepository[Producto]):
             es_removible=es_removible,
             es_principal=es_principal,
             orden=orden,
+            cantidad=cantidad,
         )
         self.session.add(enlace)
         return enlace
@@ -52,6 +56,7 @@ class ProductoRepository(BaseRepository[Producto]):
             {
                 "ingrediente_id": rel.ingrediente_id,
                 "ingrediente_nombre": ing.nombre,
+                "cantidad": rel.cantidad,
                 "es_removible": rel.es_removible,
                 "es_principal": rel.es_principal,
                 "orden": rel.orden,

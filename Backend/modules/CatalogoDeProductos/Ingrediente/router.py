@@ -4,7 +4,7 @@ from typing import List
 from core.database import get_session 
 from modules.IdentidadYAcceso.Auth.dependencies import require_roles
 from .service import IngredienteService
-from .schemas import IngredienteRead, IngredienteCreate, IngredienteUpdate
+from .schemas import IngredienteRead, IngredienteCreate, IngredienteUpdate, IngredientePrecioUpdate, IngredienteStockUpdate
 
 router = APIRouter(prefix="/ingredientes", tags=["Ingredientes"])
 
@@ -35,6 +35,24 @@ def update_ingrediente(ingrediente_id: int, data: IngredienteUpdate, session: Se
     if not ingrediente:
         raise HTTPException(status_code=404, detail="Ingrediente no encontrado")
     return ingrediente
+
+@router.patch("/{ingrediente_id}/precio", response_model=IngredienteRead, dependencies=[Depends(require_roles(["ADMIN", "STOCK"]))])
+def actualizar_precio_ingrediente(
+    ingrediente_id: int,
+    data: IngredientePrecioUpdate,
+    session: Session = Depends(get_session),
+):
+    """Update the price of an ingredient. Triggers recalculation of product prices. Requires ADMIN or STOCK role."""
+    return IngredienteService.actualizar_precio(session, ingrediente_id, data.precio)
+
+@router.patch("/{ingrediente_id}/stock", response_model=IngredienteRead, dependencies=[Depends(require_roles(["ADMIN", "STOCK"]))])
+def actualizar_stock_ingrediente(
+    ingrediente_id: int,
+    data: IngredienteStockUpdate,
+    session: Session = Depends(get_session),
+):
+    """Update the stock of an ingredient. Does NOT affect product prices. Requires ADMIN or STOCK role."""
+    return IngredienteService.actualizar_stock(session, ingrediente_id, data.stock)
 
 @router.delete("/{ingrediente_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_roles(["ADMIN", "STOCK"]))])
 def delete_ingrediente(ingrediente_id: int, session: Session = Depends(get_session)):

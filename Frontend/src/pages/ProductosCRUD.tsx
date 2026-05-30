@@ -1,5 +1,5 @@
 import { useReducer, useEffect, useCallback, useState, useRef } from "react";
-import type { Producto, ProductoCreate, ProductoIngredienteRead, ProductoCategoriaRead, ProductoMedida } from "../api/productos";
+import type { Producto, ProductoCreate, ProductoIngredienteRead, ProductoCategoriaRead } from "../api/productos";
 import { productosApi } from "../api/productos";
 import type { Ingrediente } from "../api/ingredientes";
 import { ingredientesApi } from "../api/ingredientes";
@@ -47,7 +47,7 @@ type Action =
 
 const emptyForm: ProductoCreate = {
   nombre: "", descripcion: "", precio_base: 0, tiempo_prep_min: 0,
-  disponible: true, stock_cantidad: 0, imagenes_url: [], categorias_ids: [], ingredientes: [], medidas: [],
+  disponible: true, stock_cantidad: 0, imagenes_url: [], categorias_ids: [], ingredientes: [],
 };
 
 function reducer(state: State, action: Action): State {
@@ -68,9 +68,6 @@ function reducer(state: State, action: Action): State {
           tiempo_prep_min: action.payload.tiempo_prep_min,
           disponible: action.payload.disponible,
           imagenes_url: action.payload.imagenes_url,
-          medidas: (action.payload.medidas ?? []).map(m => ({
-            nombre: m.nombre, precio: m.precio, stock: m.stock, orden: m.orden,
-          })),
         },
         selectedCategorias: [],
         selectedIngredientes: [],
@@ -88,9 +85,6 @@ function reducer(state: State, action: Action): State {
           tiempo_prep_min: action.payload.tiempo_prep_min,
           disponible: action.payload.disponible,
           imagenes_url: action.payload.imagenes_url,
-          medidas: (action.payload.medidas ?? []).map(m => ({
-            nombre: m.nombre, precio: m.precio, stock: m.stock, orden: m.orden,
-          })),
         },
         selectedCategorias: [],
         selectedIngredientes: [],
@@ -224,8 +218,9 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
   const [allIngs, setAllIngs] = useState<Ingrediente[]>([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<number | null>(null);
-  const [addForm, setAddForm] = useState({ ingrediente_id: 0, es_removible: true, es_principal: false, orden: 0 });
+  const [addForm, setAddForm] = useState({ ingrediente_id: 0, cantidad: 1, es_removible: true, es_principal: false, orden: 0 });
   const [showAdd, setShowAdd] = useState(false);
+  const [updatingCantidad, setUpdatingCantidad] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -244,8 +239,27 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
     if (!addForm.ingrediente_id) return;
     await productosApi.addIngrediente(productoId, addForm);
     setShowAdd(false);
-    setAddForm({ ingrediente_id: 0, es_removible: true, es_principal: false, orden: 0 });
+    setAddForm({ ingrediente_id: 0, cantidad: 1, es_removible: true, es_principal: false, orden: 0 });
     load();
+  };
+
+  const handleCantidadChange = async (ingredienteId: number, newCantidad: number) => {
+    if (newCantidad < 0) return;
+    setUpdatingCantidad(ingredienteId);
+    // Optimistic update: immediately update local state
+    setIngs(prev => prev.map(ing =>
+      ing.ingrediente_id === ingredienteId
+        ? { ...ing, cantidad: newCantidad }
+        : ing
+    ));
+    try {
+      await productosApi.updateIngredienteCantidad(productoId, ingredienteId, newCantidad);
+    } catch {
+      // Revert on error: reload from server
+      load();
+    } finally {
+      setUpdatingCantidad(null);
+    }
   };
 
   const handleRemove = async (ingredienteId: number) => {
@@ -292,43 +306,76 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
                 <thead><tr className="bg-gray-200">
                   <th className="border p-2 text-left">Orden</th>
                   <th className="border p-2 text-left">Ingrediente</th>
+                  <th className="border p-2 text-left">Cantidad</th>
+                  <th className="border p-2 text-left">Costo</th>
                   <th className="border p-2 text-left">Alérgeno</th>
                   <th className="border p-2 text-left">Removible</th>
                   <th className="border p-2 text-left">Principal</th>
                   <th className="border p-2 text-left">Acciones</th>
                 </tr></thead>
                 <tbody>
-                  {ings.map((ing) => {
-                    const info = getIngInfo(ing.ingrediente_id);
-                    const isAlergeno = info?.es_alergeno ?? false;
+                  {(() => {
+                    const totalCalculado = ings.reduce((sum, ing) => {
+                      const info = getIngInfo(ing.ingrediente_id);
+                      const precio = info?.precio_actual ?? 0;
+                      return sum + Number(precio) * Number(ing.cantidad);
+                    }, 0);
                     return (
-                      <tr key={ing.ingrediente_id}>
-                        <td className="border p-2">{ing.orden}</td>
-                        <td className="border p-2">{ing.ingrediente_nombre}</td>
-                        <td className="border p-2">
-                          <span className="inline-flex items-center gap-1">
-                            <span className={isAlergeno ? "text-red-600 font-medium" : "text-gray-500"}>
-                              {isAlergeno ? "Sí" : "No"}
-                            </span>
-                            <button
-                              onClick={() => handleToggleAlergeno(ing.ingrediente_id, isAlergeno)}
-                              disabled={toggling === ing.ingrediente_id}
-                              className="text-xs border border-gray-400 rounded px-1.5 py-0.5 hover:bg-gray-100 cursor-pointer disabled:opacity-50"
-                              title={isAlergeno ? "Marcar como no alérgeno" : "Marcar como alérgeno"}
-                            >
-                              {toggling === ing.ingrediente_id ? "..." : "Cambiar"}
-                            </button>
-                          </span>
-                        </td>
-                        <td className="border p-2">{ing.es_removible ? "Sí" : "No"}</td>
-                        <td className="border p-2">{ing.es_principal ? "Sí" : "No"}</td>
-                        <td className="border p-2">
-                          <button onClick={() => handleRemove(ing.ingrediente_id)}
-                            className="bg-red-600 text-white px-2 py-1 rounded text-sm cursor-pointer hover:bg-red-700">Quitar</button>
-                        </td>
-                      </tr>
+                      <>
+                        {ings.map((ing) => {
+                          const info = getIngInfo(ing.ingrediente_id);
+                          const isAlergeno = info?.es_alergeno ?? false;
+                          const precioIng = info?.precio_actual ?? 0;
+                          const cost = Number(precioIng) * Number(ing.cantidad);
+                          return (
+                            <tr key={ing.ingrediente_id}>
+                              <td className="border p-2">{ing.orden}</td>
+                              <td className="border p-2">{ing.ingrediente_nombre}</td>
+                              <td className="border p-2">
+                                <input type="number" step="0.1" min="0"
+                                  value={ing.cantidad}
+                                  disabled={updatingCantidad === ing.ingrediente_id}
+                                  onChange={(e) => handleCantidadChange(ing.ingrediente_id, Number(e.target.value))}
+                                  className="border px-2 py-1 rounded w-20" />
+                              </td>
+                              <td className="border p-2 font-mono">
+                                ${cost.toFixed(2)}
+                              </td>
+                              <td className="border p-2">
+                                <span className="inline-flex items-center gap-1">
+                                  <span className={isAlergeno ? "text-red-600 font-medium" : "text-gray-500"}>
+                                    {isAlergeno ? "Sí" : "No"}
+                                  </span>
+                                  <button
+                                    onClick={() => handleToggleAlergeno(ing.ingrediente_id, isAlergeno)}
+                                    disabled={toggling === ing.ingrediente_id}
+                                    className="text-xs border border-gray-400 rounded px-1.5 py-0.5 hover:bg-gray-100 cursor-pointer disabled:opacity-50"
+                                    title={isAlergeno ? "Marcar como no alérgeno" : "Marcar como alérgeno"}
+                                  >
+                                    {toggling === ing.ingrediente_id ? "..." : "Cambiar"}
+                                  </button>
+                                </span>
+                              </td>
+                              <td className="border p-2">{ing.es_removible ? "Sí" : "No"}</td>
+                              <td className="border p-2">{ing.es_principal ? "Sí" : "No"}</td>
+                              <td className="border p-2">
+                                <button onClick={() => handleRemove(ing.ingrediente_id)}
+                                  className="bg-red-600 text-white px-2 py-1 rounded text-sm cursor-pointer hover:bg-red-700">Quitar</button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {ings.length > 0 && (
+                          <tr className="bg-gray-100 font-semibold">
+                            <td colSpan={2} className="border p-2 text-right">Costo total calculado:</td>
+                            <td className="border p-2"></td>
+                            <td className="border p-2 font-mono">${totalCalculado.toFixed(2)}</td>
+                            <td colSpan={4} className="border p-2"></td>
+                          </tr>
+                        )}
+                      </>
                     );
-                  })}
+                  })()}
                 </tbody>
               </table>
             )}
@@ -338,7 +385,7 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
                 className="bg-green-600 text-white px-4 py-1 rounded cursor-pointer hover:bg-green-700">+ Agregar Ingrediente</button>
             ) : (
               <div className="border p-3 rounded bg-gray-50">
-                <div className="grid grid-cols-2 gap-2 mb-2">
+                <div className="grid grid-cols-3 gap-2 mb-2">
                   <div>
                     <label className="block text-sm font-medium">Ingrediente</label>
                     <select value={addForm.ingrediente_id}
@@ -346,9 +393,15 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
                       className="border px-2 py-1 rounded w-full">
                       <option value={0}>-- Seleccionar --</option>
                       {availableIngs.map((ai) => (
-                        <option key={ai.id} value={ai.id}>{ai.nombre}</option>
+                        <option key={ai.id} value={ai.id}>{ai.nombre} (${Number(ai.precio_actual).toFixed(2)})</option>
                       ))}
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium">Cantidad</label>
+                    <input type="number" step="0.1" min="0" value={addForm.cantidad}
+                      onChange={(e) => setAddForm({ ...addForm, cantidad: Number(e.target.value) })}
+                      className="border px-2 py-1 rounded w-full" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium">Orden</label>
@@ -498,119 +551,6 @@ function CategoriasPopup({ productoId, productoNombre, onClose }: {
   );
 }
 
-/* ── Modal de selección de medida (para productos con medidas) ── */
-function MedidaSelectorModal({
-  producto,
-  onConfirm,
-  onClose,
-}: {
-  producto: Producto;
-  onConfirm: (medidaId: number, medidaNombre: string, precio: number, cantidad: number) => void;
-  onClose: () => void;
-}) {
-  const [cantidades, setCantidades] = useState<Record<number, number>>({});
-  const [toast, setToast] = useState<string | null>(null);
-
-  const medidas = producto.medidas ?? [];
-
-  const getCantidad = (medidaId: number) => cantidades[medidaId] ?? 1;
-
-  const handleAgregar = (m: ProductoMedida) => {
-    const cant = getCantidad(m.id);
-    onConfirm(m.id, m.nombre, Number(m.precio), cant);
-    setToast(`${cant}x ${m.nombre} de ${producto.nombre} ha sido agregado al carrito!`);
-    setTimeout(() => setToast(null), 2000);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold">Agregar "{producto.nombre}"</h2>
-          <button onClick={onClose} className="text-gray-500 text-xl cursor-pointer">✕</button>
-        </div>
-
-        {toast && (
-          <div className="mb-3 p-3 bg-green-100 border border-green-300 text-green-800 rounded text-sm text-center font-medium">
-            {toast}
-          </div>
-        )}
-
-        {medidas.length === 0 ? (
-          <p className="text-gray-500">Este producto no tiene medidas disponibles.</p>
-        ) : (
-          <div className="space-y-3">
-            {medidas.map((m) => {
-              const sinStock = m.stock === 0 || !m.disponible;
-              const cant = getCantidad(m.id);
-              return (
-                <div
-                  key={m.id}
-                  className={`border rounded p-3 ${sinStock ? 'bg-gray-100 opacity-60' : 'bg-white'}`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <span className="font-medium">{m.nombre}</span>
-                      <span className="text-gray-500 ml-2">— ${Number(m.precio).toFixed(2)}</span>
-                    </div>
-                    {sinStock ? (
-                      <span className="text-xs text-red-500 font-medium">{!m.disponible ? 'No disponible' : 'Sin stock'}</span>
-                    ) : (
-                      <span className="text-xs text-gray-400">Stock: {m.stock}</span>
-                    )}
-                  </div>
-                  {!sinStock && (
-                    <div className="flex items-center justify-between">
-                      <div className="inline-flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setCantidades((prev) => ({ ...prev, [m.id]: Math.max(1, (prev[m.id] ?? 1) - 1) }))}
-                          disabled={cant <= 1}
-                          className="border border-gray-400 bg-white text-gray-700 hover:bg-gray-100 text-sm w-7 h-7 flex items-center justify-center rounded cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                        >
-                          −
-                        </button>
-                        <span className="w-8 text-center font-mono font-semibold">{cant}</span>
-                        <button
-                          type="button"
-                          onClick={() => setCantidades((prev) => ({ ...prev, [m.id]: (prev[m.id] ?? 1) + 1 }))}
-                          disabled={cant >= m.stock}
-                          className="border border-gray-400 bg-white text-gray-700 hover:bg-gray-100 text-sm w-7 h-7 flex items-center justify-center rounded cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                        >
-                          +
-                        </button>
-                      </div>
-                      {cant >= m.stock && (
-                        <span className="text-xs text-amber-600 font-medium">Stock máximo</span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleAgregar(m)}
-                        className="bg-blue-600 text-white px-3 py-1 text-sm rounded cursor-pointer hover:bg-blue-700"
-                      >
-                        Agregar — ${(Number(m.precio) * cant).toFixed(2)}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            <div className="flex justify-center pt-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-100 cursor-pointer"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 /* ── Página principal ── */
 export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'stock' | 'pedidos' | 'client' }) {
   const navigate = useNavigate();
@@ -620,6 +560,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
   const hideCreate = role !== 'admin';
   const hideDelete = role === 'client' || role === 'stock';
   const hideRelations = role === 'client' || role === 'stock';
+  const hideCategoriasBtn = role === 'client' || role === 'stock';
   const hideExport = role === 'client' || role === 'stock';
   const [state, dispatch] = useReducer(reducer, init);
   const [ingPopup, setIngPopup] = useState<{ id: number; nombre: string } | null>(null);
@@ -629,28 +570,8 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
   const [recentlyAdded, setRecentlyAdded] = useState<Set<number>>(new Set());
   const addTimerRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
-  // Medidas state for create form
-  const [newMedida, setNewMedida] = useState({ nombre: '', precio: 0, stock: 0 });
-  // Existing medidas for edit/stock-edit
-  const [existingMedidas, setExistingMedidas] = useState<ProductoMedida[]>([]);
-  const [medidaModalProducto, setMedidaModalProducto] = useState<Producto | null>(null);
-
   const handleAddToCart = (prod: Producto) => {
-    // Si el producto tiene medidas, mostrar modal de selección
-    if (prod.medidas && prod.medidas.length > 0) {
-      setMedidaModalProducto(prod);
-      return;
-    }
-
-    // Sin medidas → agregar directo
     addToCart(prod.id, prod.nombre, Number(prod.precio_base));
-    triggerFeedback(prod.id);
-  };
-
-  const handleMedidaConfirm = (medidaId: number, medidaNombre: string, precio: number, cantidad: number) => {
-    const prod = medidaModalProducto;
-    if (!prod) return;
-    addToCart(prod.id, prod.nombre, precio, cantidad, medidaId, medidaNombre);
     triggerFeedback(prod.id);
   };
 
@@ -675,20 +596,6 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
     categoriasApi.getAll(0, 1000).then(setAllCats).catch(() => {});
     ingredientesApi.getAll(0, 1000).then(setAllIngs).catch(() => {});
   }, [hideRelations]);
-
-  // Load existing medidas for edit/stock-edit
-  useEffect(() => {
-    if (state.editingId && state.showForm) {
-      const found = state.items.find(p => p.id === state.editingId);
-      if (found?.medidas && found.medidas.length > 0) {
-        setExistingMedidas(found.medidas);
-      } else {
-        productosApi.getMedidas(state.editingId).then(setExistingMedidas).catch(() => {});
-      }
-    } else {
-      setExistingMedidas([]);
-    }
-  }, [state.editingId, state.showForm]);
 
   // Load selected for editing
   useEffect(() => {
@@ -742,22 +649,10 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
     try {
       if (state.editingId) {
         if (state.stockEditOnly) {
-          if (existingMedidas.length > 0) {
-            // Update stock for each medida
-            for (const m of existingMedidas) {
-              await productosApi.updateMedida(state.editingId, m.id, {
-                nombre: m.nombre,
-                precio: m.precio,
-                stock: m.stock,
-                disponible: m.disponible,
-              });
-            }
-          } else {
-            await productosApi.update(state.editingId, {
-              stock_cantidad: state.form.stock_cantidad,
-              disponible: state.form.disponible,
-            });
-          }
+          await productosApi.update(state.editingId, {
+            stock_cantidad: state.form.stock_cantidad,
+            disponible: state.form.disponible,
+          });
         } else {
           await productosApi.update(state.editingId, {
             nombre: state.form.nombre,
@@ -798,22 +693,9 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
     p.nombre.toLowerCase().includes(state.filter.toLowerCase())
   );
 
-  // Walk up the category tree: any selected category that is primordial,
-  // or whose parent/grandparent is primordial, enables medidas
-  const catAncestryMap = new Map(allCats.map(c => [c.id, c]));
-  const hasPrimordialCategory = state.selectedCategorias.some(sc => {
-    let current = catAncestryMap.get(sc.id);
-    while (current) {
-      if (current.es_primordial) return true;
-      current = current.parent_id ? catAncestryMap.get(current.parent_id) : undefined;
-    }
-    return false;
-  });
-  const tieneMedidas = (state.form.medidas?.length ?? 0) > 0;
-
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Gestión de Productos</h1>
+      <h1 className="text-2xl font-bold mb-4">{role === 'client' ? 'Menú' : 'Gestión de Productos'}</h1>
       {state.error && <p className="text-red-500 mb-4">{state.error}</p>}
 
       <div className="flex gap-2 mb-4 items-center">
@@ -835,45 +717,20 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
       {state.showForm && (!hideCreate || state.stockEditOnly) && (
         <form onSubmit={handleSubmit} className="border p-4 mb-4 rounded bg-gray-50">
           {state.stockEditOnly ? (
-            existingMedidas.length > 0 ? (
-              /* ── STOCK: editor de stock por medida ── */
-              <div className="mb-4">
-                <h3 className="text-lg font-medium mb-2">Stock por Medida</h3>
-                {existingMedidas.map(m => (
-                  <div key={m.id} className="flex gap-2 items-center mb-2">
-                    <span className="w-1/4 font-medium">{m.nombre}</span>
-                    <input type="number" min="0" value={m.stock}
-                      onChange={(e) => setExistingMedidas(prev =>
-                        prev.map(pm => pm.id === m.id ? { ...pm, stock: Number(e.target.value) } : pm)
-                      )}
-                      className="border px-2 py-1 rounded w-20" />
-                    <label className="text-sm flex items-center gap-1 ml-2">
-                      <input type="checkbox" checked={m.disponible}
-                        onChange={(e) => setExistingMedidas(prev =>
-                          prev.map(pm => pm.id === m.id ? { ...pm, disponible: e.target.checked } : pm)
-                        )}
-                        className="cursor-pointer" />
-                      Disponible
-                    </label>
-                  </div>
-                ))}
+            /* ── STOCK: simple stock_cantidad ── */
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium">Stock</label>
+                <input type="number" min="0" value={state.form.stock_cantidad ?? 0}
+                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { stock_cantidad: Number(e.target.value) } })}
+                  className="border px-2 py-1 rounded w-full" />
               </div>
-            ) : (
-              /* ── STOCK: legacy stock_cantidad ── */
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium">Stock</label>
-                  <input type="number" min="0" value={state.form.stock_cantidad ?? 0}
-                    onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { stock_cantidad: Number(e.target.value) } })}
-                    className="border px-2 py-1 rounded w-full" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium">Disponible</label>
-                  <input type="checkbox" checked={state.form.disponible ?? true}
-                    onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { disponible: e.target.checked } })} />
-                </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">Disponible</label>
+                <input type="checkbox" checked={state.form.disponible ?? true}
+                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { disponible: e.target.checked } })} />
               </div>
-            )
+            </div>
           ) : (
             /* ── ADMIN/PEDIDOS: formulario completo ── */
             <div className="grid grid-cols-2 gap-4 mb-4">
@@ -891,26 +748,28 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
               </div>
               <div>
                 <label className="block text-sm font-medium">Precio Base</label>
-                <input type="number" step="0.01" value={state.form.precio_base ?? 0}
-                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { precio_base: Number(e.target.value) } })}
-                  className="border px-2 py-1 rounded w-full" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium">Stock</label>
                 {(() => {
-                  const stockDisabled = (!state.editingId && hasPrimordialCategory) || (!!state.editingId && existingMedidas.length > 0);
+                  const editingProduct = state.editingId ? state.items.find(p => p.id === state.editingId) : null;
+                  const hasIngredients = editingProduct?.tiene_ingredientes ?? false;
+                  const precioDisabled = !!state.editingId && hasIngredients;
                   return (
                     <>
-                      <input type="number" min="0" value={state.form.stock_cantidad ?? 0}
-                        disabled={stockDisabled}
-                        onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { stock_cantidad: Number(e.target.value) } })}
-                        className={`border px-2 py-1 rounded w-full ${stockDisabled ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : ''}`} />
-                      {stockDisabled && (
-                        <p className="text-xs text-gray-500 mt-1 italic">El stock se gestiona a través de las medidas/porciones.</p>
+                      <input type="number" step="0.01" value={state.form.precio_base ?? 0}
+                        disabled={precioDisabled}
+                        onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { precio_base: Number(e.target.value) } })}
+                        className={`border px-2 py-1 rounded w-full ${precioDisabled ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : ''}`} />
+                      {precioDisabled && (
+                        <p className="text-xs text-gray-500 mt-1 italic">Calculado desde ingredientes</p>
                       )}
                     </>
                   );
                 })()}
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Stock</label>
+                <input type="number" min="0" value={state.form.stock_cantidad ?? 0}
+                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { stock_cantidad: Number(e.target.value) } })}
+                  className="border px-2 py-1 rounded w-full" />
               </div>
               <div>
                 <label className="block text-sm font-medium">Tiempo Prep. (min)</label>
@@ -954,12 +813,9 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
                 <button type="button" onClick={() => dispatch({ type: "SET_SHOW_CATEGORIA_SELECTOR", payload: true })} className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer">Seleccionar Categorías</button>
               </div>
 
-              <div className={`border p-4 mb-4 rounded ${tieneMedidas && hasPrimordialCategory ? 'bg-gray-100 opacity-60' : 'bg-gray-50'}`}>
-                <h3 className="text-lg font-medium mb-2 flex items-center gap-2">
+              <div className="border p-4 mb-4 rounded bg-gray-50">
+                <h3 className="text-lg font-medium mb-2">
                   Ingredientes
-                  {tieneMedidas && hasPrimordialCategory && (
-                    <span className="text-xs text-gray-500 font-normal italic">(no aplica — el producto usa medidas/porciones)</span>
-                  )}
                 </h3>
                 {state.selectedIngredientes.length > 0 && (
                   <table className="w-full border-collapse border mb-2">
@@ -981,78 +837,11 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
                     </tbody>
                   </table>
                 )}
-                <button type="button" disabled={tieneMedidas && hasPrimordialCategory}
+                <button type="button"
                   onClick={() => dispatch({ type: "SET_SHOW_INGREDIENTE_SELECTOR", payload: true })}
-                  className={`px-4 py-1 rounded cursor-pointer ${tieneMedidas && hasPrimordialCategory ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white'}`}>Seleccionar Ingredientes</button>
+                  className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer">Seleccionar Ingredientes</button>
               </div>
             </>
-          )}
-
-          {/* ── Medidas / Porciones (solo creación con categoría primordial) ── */}
-          {!state.stockEditOnly && !state.editingId && hasPrimordialCategory && (
-            <div className="border p-4 mb-4 rounded bg-gray-50">
-              <h3 className="text-lg font-medium mb-2">Medidas / Porciones</h3>
-
-              {(!state.form.medidas || state.form.medidas.length === 0) ? (
-                <p className="text-gray-500 mb-4">Sin medidas definidas.</p>
-              ) : (
-                <table className="w-full border-collapse border mb-4">
-                  <thead><tr className="bg-gray-200">
-                    <th className="border p-2 text-left">Nombre</th>
-                    <th className="border p-2 text-left">Precio</th>
-                    <th className="border p-2 text-left">Stock</th>
-                    <th className="border p-2 text-left">Acción</th>
-                  </tr></thead>
-                  <tbody>
-                    {state.form.medidas.map((m, idx) => (
-                      <tr key={idx}>
-                        <td className="border p-2">{m.nombre}</td>
-                        <td className="border p-2">${m.precio}</td>
-                        <td className="border p-2">{m.stock ?? 0}</td>
-                        <td className="border p-2">
-                          <button type="button" onClick={() => {
-                            const current = state.form.medidas ?? [];
-                            dispatch({ type: "UPDATE_FORM", payload: { medidas: current.filter((_, i) => i !== idx) } });
-                          }} className="bg-red-600 text-white px-2 py-1 rounded text-sm cursor-pointer">Quitar</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-
-              {/* Add medida inline form */}
-              <div className="border p-3 rounded bg-white">
-                <div className="grid grid-cols-3 gap-2 mb-2">
-                  <div>
-                    <label className="block text-sm font-medium">Nombre</label>
-                    <input type="text" value={newMedida.nombre}
-                      onChange={(e) => setNewMedida({ ...newMedida, nombre: e.target.value })}
-                      className="border px-2 py-1 rounded w-full" placeholder="Ej: 1/2 kg" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium">Precio</label>
-                    <input type="number" step="0.01" min="0" value={newMedida.precio}
-                      onChange={(e) => setNewMedida({ ...newMedida, precio: Number(e.target.value) })}
-                      className="border px-2 py-1 rounded w-full" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium">Stock</label>
-                    <input type="number" min="0" value={newMedida.stock}
-                      onChange={(e) => setNewMedida({ ...newMedida, stock: Number(e.target.value) })}
-                      className="border px-2 py-1 rounded w-full" />
-                  </div>
-                </div>
-                <button type="button" onClick={() => {
-                  if (!newMedida.nombre.trim()) return;
-                  dispatch({
-                    type: "UPDATE_FORM",
-                    payload: { medidas: [...(state.form.medidas ?? []), { ...newMedida }] },
-                  });
-                  setNewMedida({ nombre: '', precio: 0, stock: 0 });
-                }} className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer">Agregar</button>
-              </div>
-            </div>
           )}
 
           <div className="flex gap-2 mt-4">
@@ -1073,63 +862,49 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
             {!readOnly && <th className="border p-2 text-left">Stock</th>}
             {!isStockMode && <th className="border p-2 text-left">Prep (min)</th>}
             <th className="border p-2 text-left">Disponible</th>
-            {!readOnly && !isStockMode && (
-              <th className="border p-2 text-left">Relaciones</th>
+            {!readOnly && (!isStockMode || role === 'stock') && (
+              <th className="border p-2 text-left">{isStockMode ? 'Ingredientes' : 'Relaciones'}</th>
             )}
             {!readOnly && (
               <th className="border p-2 text-left">Acciones</th>
             )}
-            {isAuth && <th className="border p-2 text-left">Agregar al carrito</th>}
+                {isAuth && role !== 'stock' && <th className="border p-2 text-left">Agregar al carrito</th>}
           </tr></thead>
           <tbody>
             {filtered.map((prod) => (
               <tr key={prod.id} className="hover:bg-gray-100">
                 {!readOnly && <td className="border p-2">{prod.id}</td>}
                 <td className="border p-2">{prod.nombre}</td>
-                <td className="border p-2">${prod.precio_base}</td>
+                <td className="border p-2">
+                  <span>
+                    ${Number(prod.precio_base).toFixed(2)}
+                    {prod.tiene_ingredientes && (
+                      <span className="text-xs text-blue-600 font-medium ml-1">(calc)</span>
+                    )}
+                  </span>
+                </td>
                 {!readOnly && (
                   <td className="border p-2">
-                    {(() => {
-                      const totalStock = prod.medidas?.length
-                        ? prod.medidas.reduce((s, m) => s + m.stock, 0)
-                        : prod.stock_cantidad;
-                      return (
-                        <span className={`font-mono font-semibold ${totalStock === 0 ? 'text-red-600' : 'text-green-700'}`}>
-                          {totalStock}
-                        </span>
-                      );
-                    })()}
+                    <span className={`font-mono font-semibold ${prod.stock_cantidad === 0 ? 'text-red-600' : 'text-green-700'}`}>
+                      {prod.stock_cantidad}
+                    </span>
                   </td>
                 )}
                 {!isStockMode && <td className="border p-2">{prod.tiempo_prep_min}</td>}
                 <td className="border p-2">
-                  {(() => {
-                    // Para productos con medidas, mostrar disponibilidad individual
-                    if (prod.medidas && prod.medidas.length > 0) {
-                      const disponibles = prod.medidas.filter(m => m.disponible && m.stock > 0).length;
-                      const total = prod.medidas.length;
-                      if (disponibles === total) {
-                        return <span className="font-medium text-green-700">Sí</span>;
-                      }
-                      if (disponibles === 0) {
-                        return <span className="font-medium text-red-600">No</span>;
-                      }
-                      return <span className="font-medium text-amber-600">Algunos sí</span>;
-                    }
-                    return (
-                      <span className={`font-medium ${prod.disponible ? 'text-green-700' : 'text-red-600'}`}>
-                        {prod.disponible ? "Sí" : "No"}
-                      </span>
-                    );
-                  })()}
+                  <span className={`font-medium ${prod.disponible ? 'text-green-700' : 'text-red-600'}`}>
+                    {prod.disponible ? "Sí" : "No"}
+                  </span>
                 </td>
-                {!readOnly && !isStockMode && (
+                {!readOnly && (!isStockMode || role === 'stock') && (
                   <td className="border p-2">
                     <div className="flex gap-1">
                       <button onClick={() => setIngPopup({ id: prod.id, nombre: prod.nombre })}
                         className="bg-purple-600 text-white px-2 py-1 rounded text-sm cursor-pointer hover:bg-purple-700">Ingredientes</button>
-                      <button onClick={() => setCatPopup({ id: prod.id, nombre: prod.nombre })}
-                        className="bg-teal-600 text-white px-2 py-1 rounded text-sm cursor-pointer hover:bg-teal-700">Categorías</button>
+                      {!hideCategoriasBtn && (
+                        <button onClick={() => setCatPopup({ id: prod.id, nombre: prod.nombre })}
+                          className="bg-teal-600 text-white px-2 py-1 rounded text-sm cursor-pointer hover:bg-teal-700">Categorías</button>
+                      )}
                     </div>
                   </td>
                 )}
@@ -1149,18 +924,45 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
                     </div>
                   </td>
                 )}
-                {isAuth && (
+                {isAuth && role !== 'stock' && (
                   <td className="border p-2">
-                    <button
-                      onClick={() => handleAddToCart(prod)}
-                      className={`px-2 py-1 rounded text-sm cursor-pointer transition-colors ${
-                        recentlyAdded.has(prod.id)
-                          ? "bg-green-600 text-white"
-                          : "bg-blue-600 text-white hover:bg-blue-700"
-                      }`}
-                    >
-                      {recentlyAdded.has(prod.id) ? "✓ Agregado" : "Agregar al carrito"}
-                    </button>
+                    {(() => {
+                      let addable = true;
+                      let disabledReason = '';
+
+                      if (!prod.disponible) {
+                        addable = false;
+                        disabledReason = 'No disponible';
+                      } else if (prod.stock_cantidad <= 0) {
+                        addable = false;
+                        disabledReason = 'Sin stock';
+                      }
+
+                      if (!addable) {
+                        return (
+                          <button
+                            disabled
+                            className="px-2 py-1 rounded text-sm bg-gray-400 text-gray-700 cursor-not-allowed"
+                            title={disabledReason}
+                          >
+                            {disabledReason}
+                          </button>
+                        );
+                      }
+
+                      return (
+                        <button
+                          onClick={() => handleAddToCart(prod)}
+                          className={`px-2 py-1 rounded text-sm cursor-pointer transition-colors ${
+                            recentlyAdded.has(prod.id)
+                              ? "bg-green-600 text-white"
+                              : "bg-blue-600 text-white hover:bg-blue-700"
+                          }`}
+                        >
+                          {recentlyAdded.has(prod.id) ? "✓ Agregado" : "Agregar al carrito"}
+                        </button>
+                      );
+                    })()}
                   </td>
                 )}
               </tr>
@@ -1180,7 +982,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
             onClick={() => dispatch({ type: "SET_PAGE", payload: state.page + 1 })}
             className="bg-gray-300 px-3 py-1 rounded disabled:opacity-50 cursor-pointer">Siguiente →</button>
         </div>
-        {isAuth && (
+        {isAuth && role !== 'stock' && (
           <button
             onClick={() => navigate("/carrito")}
             className="bg-green-700 text-white px-4 py-1.5 rounded text-sm font-semibold hover:bg-green-800 cursor-pointer"
@@ -1219,14 +1021,6 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
         />
       )}
 
-      {/* Modal de selección de medida */}
-      {medidaModalProducto && (
-        <MedidaSelectorModal
-          producto={medidaModalProducto}
-          onConfirm={handleMedidaConfirm}
-          onClose={() => setMedidaModalProducto(null)}
-        />
-      )}
     </div>
   );
 }

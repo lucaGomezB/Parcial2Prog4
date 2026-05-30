@@ -27,6 +27,27 @@ class CategoriaService:
 
     @staticmethod
     def create(session: Session, data: CategoriaCreate) -> Categoria:
+        # Validar que el nombre no exista ya (unique constraint)
+        existing = session.exec(
+            select(Categoria).where(Categoria.nombre == data.nombre, Categoria.deleted_at.is_(None))
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Ya existe una categoría con el nombre '{data.nombre}'"
+            )
+
+        # Validar que el parent_id exista (FK constraint)
+        if data.parent_id is not None:
+            parent = session.exec(
+                select(Categoria).where(Categoria.id == data.parent_id, Categoria.deleted_at.is_(None))
+            ).first()
+            if not parent:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="La categoría padre indicada no existe"
+                )
+
         with CatalogoDeProductosUnitOfWork(session) as uow:
             db_categoria = Categoria(**data.model_dump())
             uow.categorias.add(db_categoria)

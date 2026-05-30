@@ -86,21 +86,34 @@ function App() {
 
   const isGuest = !getAccessToken();
   const isClient = !isGuest && !hasRole(userRoles, 'ADMIN', 'STOCK', 'PEDIDOS')
-  const canSeeFullNav = hasRole(userRoles, 'ADMIN', 'PEDIDOS')
   const isAdmin = hasRole(userRoles, 'ADMIN')
+  const isStock = hasRole(userRoles, 'STOCK')
+  const isPedidos = hasRole(userRoles, 'PEDIDOS')
+  const canSeeFullNav = isAdmin
 
   const cartCount = getItemCount()
-  const hasGestorRole = hasRole(userRoles, 'ADMIN', 'PEDIDOS')
 
   let navItems: { to: string; label: string }[];
-  if (isClient) {
+  if (isGuest) {
+    navItems = [
+      { to: '/productos', label: 'Menú' },
+    ];
+  } else if (isClient) {
     navItems = [
       { to: '/productos', label: 'Menú' },
       { to: '/pedidos', label: 'Mis Pedidos' },
       { to: '/direcciones', label: 'Direcciones' },
-      ...(isGuest ? [] : [{ to: '/carrito', label: `Carrito${cartCount > 0 ? ` (${cartCount})` : ''}` }]),
+      { to: '/carrito', label: `Carrito${cartCount > 0 ? ` (${cartCount})` : ''}` },
     ];
-  } else if (canSeeFullNav) {
+  } else if (isStock) {
+    navItems = [
+      { to: '/productos', label: 'Productos' },
+    ];
+  } else if (isPedidos) {
+    navItems = [
+      { to: '/pedidos', label: 'Pedidos' },
+    ];
+  } else if (isAdmin) {
     navItems = [
       { to: '/categorias', label: 'Categorías' },
       { to: '/ingredientes', label: 'Ingredientes' },
@@ -109,9 +122,7 @@ function App() {
       { to: '/direcciones', label: 'Direcciones' },
       ...(isGuest ? [] : [{ to: '/carrito', label: `Carrito${cartCount > 0 ? ` (${cartCount})` : ''}` }]),
     ];
-    if (isAdmin) {
-      navItems.splice(0, 0, { to: '/admin/usuarios', label: 'Usuarios' });
-    }
+    navItems.splice(0, 0, { to: '/admin/usuarios', label: 'Usuarios' });
   } else {
     navItems = [
       { to: '/productos', label: 'Productos' },
@@ -125,7 +136,7 @@ function App() {
     <div className="min-h-screen bg-white">
       <nav className="bg-gray-800 text-white px-4 py-3 flex justify-between items-center">
         <div className="flex gap-4 items-center">
-          <span className="font-bold mr-4">{isClient ? 'Menú' : 'Catálogo de Productos'}</span>
+          <span className="font-bold mr-4">{isClient || isGuest ? 'Menú' : 'Catálogo de Productos'}</span>
           {navItems.map((item) => (
             <NavLink
               key={item.to}
@@ -151,25 +162,46 @@ function App() {
           {(() => {
             // Determinar el role para ProductosCRUD según los roles del usuario
             let productRole: 'admin' | 'stock' | 'pedidos' | 'client';
-            if (isClient) productRole = 'client';
+            if (isClient || isGuest) productRole = 'client';
             else if (hasRole(userRoles, 'ADMIN')) productRole = 'admin';
             else if (hasRole(userRoles, 'STOCK')) productRole = 'stock';
             else productRole = 'pedidos';
 
-            return isClient ? (
+            if (isClient) {
+              return (
+                <>
+                  <Route path="/" element={<Navigate to="/productos" replace />} />
+                  <Route path="/productos" element={<ProductosCRUD role={productRole} />} />
+                  {!isGuest && <Route path="/carrito" element={<Carrito />} />}
+                  <Route path="/pedidos" element={<PedidosPage />} />
+                  <Route path="/direcciones" element={<DireccionesPage />} />
+                  <Route path="*" element={<Navigate to="/productos" replace />} />
+                </>
+              );
+            }
+            if (isStock) {
+              return (
+                <>
+                  <Route path="/" element={<Navigate to="/productos" replace />} />
+                  <Route path="/productos" element={<ProductosCRUD role={productRole} />} />
+                  <Route path="*" element={<Navigate to="/productos" replace />} />
+                </>
+              );
+            }
+            if (isPedidos) {
+              return (
+                <>
+                  <Route path="/" element={<Navigate to="/pedidos" replace />} />
+                  <Route path="/pedidos" element={<PedidosPage />} />
+                  <Route path="*" element={<Navigate to="/pedidos" replace />} />
+                </>
+              );
+            }
+            return (
               <>
                 <Route path="/" element={<Navigate to="/productos" replace />} />
-                <Route path="/productos" element={<ProductosCRUD role={productRole} />} />
-                {!isGuest && <Route path="/carrito" element={<Carrito />} />}
-                <Route path="/pedidos" element={<PedidosPage />} />
-                <Route path="/direcciones" element={<DireccionesPage />} />
-                <Route path="*" element={<Navigate to="/productos" replace />} />
-              </>
-            ) : (
-              <>
-                <Route path="/" element={<Navigate to="/productos" replace />} />
-                {canSeeFullNav && <Route path="/categorias" element={<CategoriasCRUD />} />}
-                {canSeeFullNav && <Route path="/ingredientes" element={<IngredientesCRUD />} />}
+                <Route path="/categorias" element={<CategoriasCRUD />} />
+                <Route path="/ingredientes" element={<IngredientesCRUD />} />
                 <Route path="/admin/usuarios" element={<AdminUsuariosPage />} />
                 <Route path="/productos" element={<ProductosCRUD role={productRole} />} />
                 {!isGuest && <Route path="/carrito" element={<Carrito />} />}

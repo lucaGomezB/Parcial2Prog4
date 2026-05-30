@@ -6,7 +6,6 @@ export interface DetallePedido {
   nombre_snapshot: string;
   precio_snapshot: string;
   subtotal_snap: string;
-  medida_snapshot?: string | null;
   personalizacion?: number[] | null;
 }
 
@@ -51,7 +50,6 @@ export interface CancelarResponse {
 export interface StockInsuficienteDetalle {
   producto_id: number;
   nombre_producto: string;
-  medida: string | null;
   cantidad_solicitada: number;
   stock_disponible: number;
 }
@@ -60,6 +58,27 @@ export interface StockInsuficienteError {
   error: string;
   mensaje: string;
   detalles: StockInsuficienteDetalle[];
+}
+
+export interface ValidarStockDetalleInput {
+  producto_id: number;
+  cantidad: number;
+}
+
+export interface ValidarStockInput {
+  detalles: ValidarStockDetalleInput[];
+}
+
+export interface ValidarStockDetalle {
+  producto_id: number;
+  nombre_producto: string;
+  cantidad_solicitada: number;
+  stock_disponible: number;
+}
+
+export interface ValidarStockResponse {
+  valido: boolean;
+  detalles: ValidarStockDetalle[];
 }
 
 export interface CreatePedidoInput {
@@ -75,7 +94,6 @@ export interface CreatePedidoInput {
     cantidad: number;
     nombre_snapshot: string;
     precio_snapshot: number;
-    medida_id?: number | null;
   }[];
 }
 
@@ -112,5 +130,11 @@ export const pedidosApi = {
     apiFetch<Pedido>(`/pedidos/${pedidoId}/detalles/${productoId}`, {
       method: "PATCH",
       body: JSON.stringify({ cantidad }),
+    }),
+
+  validarStock: (data: ValidarStockInput) =>
+    apiFetch<ValidarStockResponse>("/pedidos/validar-stock", {
+      method: "POST",
+      body: JSON.stringify(data),
     }),
 };

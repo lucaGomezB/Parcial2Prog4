@@ -30,7 +30,7 @@ class DetallePedido(SQLModel, table=True):
     personalizacion: Optional[List[int]] = Field(
         default=None, sa_column=Column(ARRAY(Integer))
     )
-    medida_snapshot: Optional[str] = Field(default=None, max_length=100)
+    # medida_snapshot fue eliminado — existe en BD para datos históricos
 
     # Only created_at - no updated_at (immutable row)
     created_at: datetime = Field(default_factory=get_utc_now, nullable=False)

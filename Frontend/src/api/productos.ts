@@ -1,23 +1,5 @@
 import { apiFetch } from "./client";
 
-export interface ProductoMedida {
-  id: number;
-  producto_id: number;
-  nombre: string;
-  precio: number;
-  stock: number;
-  orden: number;
-  disponible: boolean;
-}
-
-export interface ProductoMedidaCreate {
-  nombre: string;
-  precio: number;
-  stock?: number;
-  orden?: number;
-  disponible?: boolean;
-}
-
 export interface Producto {
   id: number;
   nombre: string;
@@ -27,11 +9,12 @@ export interface Producto {
   stock_cantidad: number;
   tiempo_prep_min: number;
   disponible: boolean;
-  medidas?: ProductoMedida[];
+  tiene_ingredientes?: boolean;
 }
 
 export interface IngredienteAsignado {
   ingrediente_id: number;
+  cantidad?: number;
   es_removible?: boolean;
   es_principal?: boolean;
   orden?: number;
@@ -48,7 +31,6 @@ export interface ProductoCreate {
   categorias_ids?: number[];
   categoria_principal_id?: number | null;
   ingredientes?: IngredienteAsignado[];
-  medidas?: ProductoMedidaCreate[];
 }
 
 export interface ProductoUpdate {
@@ -66,6 +48,7 @@ export interface ProductoIngredienteRead {
   es_removible: boolean;
   es_principal: boolean;
   orden: number;
+  cantidad: number;
 }
 
 export interface ProductoCategoriaRead {
@@ -115,6 +98,12 @@ export const productosApi = {
       method: "DELETE",
     }),
 
+  updateIngredienteCantidad: (productoId: number, ingredienteId: number, cantidad: number) =>
+    apiFetch<ProductoIngredienteRead[]>(`/productos/${productoId}/ingredientes/${ingredienteId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ cantidad }),
+    }),
+
   // Relaciones Producto-Categoría
   getCategorias: (productoId: number) =>
     apiFetch<ProductoCategoriaRead[]>(`/productos/${productoId}/categorias`),
@@ -130,24 +119,4 @@ export const productosApi = {
       method: "DELETE",
     }),
 
-  // Medidas
-  getMedidas: (productoId: number) =>
-    apiFetch<ProductoMedida[]>(`/productos/${productoId}/medidas`),
-
-  createMedida: (productoId: number, data: ProductoMedidaCreate) =>
-    apiFetch<ProductoMedida>(`/productos/${productoId}/medidas`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-
-  updateMedida: (productoId: number, medidaId: number, data: ProductoMedidaCreate) =>
-    apiFetch<ProductoMedida>(`/productos/${productoId}/medidas/${medidaId}`, {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    }),
-
-  deleteMedida: (productoId: number, medidaId: number) =>
-    apiFetch<void>(`/productos/${productoId}/medidas/${medidaId}`, {
-      method: "DELETE",
-    }),
 };
