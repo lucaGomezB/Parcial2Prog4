@@ -1,25 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import apiClient from "../api/client";
-import { getToken, setToken, clearAuth } from "../api/client";
+import { getToken, setToken } from "../api/client";
+import { useAuthStore } from "../store/authStore";
 
 const ADVERTENCIA_MS = 60_000; // Mostrar modal faltando 60s
 const CTA_SEGUNDOS = 30;       // Cuenta regresiva de 30s
 
 export default function SessionTimeoutModal() {
   const [mostrar, setMostrar] = useState(false);
-  const [expirada, setExpirada] = useState(false);
   const [segundos, setSegundos] = useState(CTA_SEGUNDOS);
   const [extendiendo, setExtendiendo] = useState(false);
   const autoCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cerrandoSesion = useRef(false);
-
-  // ── Ir al login — hard redirect para garantizar que React resetee todo el estado ──
-  const irALogin = useCallback(() => {
-    if (cerrandoSesion.current) return;
-    cerrandoSesion.current = true;
-    clearAuth();
-    window.location.href = "/login";
-  }, []);
 
   // ── Cerrar sesión totalmente ──
   const cerrarSesion = useCallback(async () => {
@@ -28,7 +20,7 @@ export default function SessionTimeoutModal() {
     try {
       await apiClient.post("/auth/logout");
     } catch { /* si falla, igual limpiamos */ }
-    clearAuth();
+    useAuthStore.getState().logout();
     window.location.href = "/login";
   }, []);
 
@@ -44,25 +36,13 @@ export default function SessionTimeoutModal() {
       setMostrar(false);
       setSegundos(CTA_SEGUNDOS);
     } catch {
-      clearAuth();
-      window.location.href = "/login";
+      cerrarSesion();
     } finally {
       setExtendiendo(false);
     }
-  }, []);
+  }, [cerrarSesion]);
 
-  // ── Effect 0: Escuchar evento session:expired desde el interceptor ──
-  useEffect(() => {
-    const handler = () => {
-      setExpirada(true);
-      setMostrar(true);
-      if (autoCloseRef.current) clearTimeout(autoCloseRef.current);
-    };
-    window.addEventListener("session:expired", handler);
-    return () => window.removeEventListener("session:expired", handler);
-  }, []);
-
-  // ── Effect 1: Verificar expiración cada 10s ──
+  // ── Effect: Verificar expiración cada 10s ──
   useEffect(() => {
     const verificar = () => {
       const token = getToken();
@@ -84,11 +64,11 @@ export default function SessionTimeoutModal() {
     verificar();
     const id = setInterval(verificar, 10_000);
     return () => clearInterval(id);
-  }, [mostrar, cerrarSesion]); // ← SOLO limpia el interval de chequeo
+  }, [mostrar, cerrarSesion]);
 
-  // ── Effect 2: Cuando el modal se muestra (no expirada), arrancar cuenta regresiva + auto-close ──
+  // ── Effect: Cuando el modal se muestra, arrancar cuenta regresiva + auto-close ──
   useEffect(() => {
-    if (!mostrar || expirada) return;
+    if (!mostrar) return;
 
     // Reset segundos cada vez que se abre el modal
     setSegundos(CTA_SEGUNDOS);
@@ -113,31 +93,11 @@ export default function SessionTimeoutModal() {
       clearInterval(intervalo);
       if (autoCloseRef.current) clearTimeout(autoCloseRef.current);
     };
-  }, [mostrar, expirada, cerrarSesion]);
+  }, [mostrar, cerrarSesion]);
 
   if (!mostrar) return null;
 
-  // ── Estado: sesión expirada (sin opción a extender) ──
-  if (expirada) {
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
-        <div className="bg-white rounded-lg p-6 w-full max-w-sm shadow-xl text-center">
-          <h2 className="text-lg font-bold mb-2 text-red-600">Sesión expirada</h2>
-          <p className="text-sm text-gray-600 mb-4">
-            Tu sesión ha expirado y no puede renovarse automáticamente.
-          </p>
-          <button
-            onClick={irALogin}
-            className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
-          >
-            Ir al inicio de sesión
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Estado: advertencia de expiración próxima ──
+  // ── Advertencia de expiración próxima ──
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
       <div className="bg-white rounded-lg p-6 w-full max-w-sm shadow-xl text-center">

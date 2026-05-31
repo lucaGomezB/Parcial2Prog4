@@ -1,0 +1,73 @@
+C:\Users\Admin\miniconda3\Lib\site-packages\sqlmodel\main.py:682: SAWarning: This declarative base already contains a class with the same class name and module name as modules.VentasPagosTrazabilidad.Pedido.models.Pedido, and will be replaced in the string-lookup table.
+  DeclarativeMeta.__init__(cls, classname, bases, dict_, **kw)
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\Admin\miniconda3\Lib\site-packages\uvicorn\__main__.py", line 4, in <module>
+    uvicorn.main()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\Admin\miniconda3\Lib\site-packages\click\core.py", line 1514, in __call__
+    return self.main(*args, **kwargs)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\miniconda3\Lib\site-packages\click\core.py", line 1435, in main
+    rv = self.invoke(ctx)
+  File "C:\Users\Admin\miniconda3\Lib\site-packages\click\core.py", line 1298, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\miniconda3\Lib\site-packages\click\core.py", line 853, in invoke
+    return callback(*args, **kwargs)
+  File "C:\Users\Admin\miniconda3\Lib\site-packages\uvicorn\main.py", line 441, in main
+    run(
+    ~~~^
+        app,
+        ^^^^
+    ...<48 lines>...
+        reset_contextvars=reset_contextvars,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Admin\miniconda3\Lib\site-packages\uvicorn\main.py", line 617, in run
+    server.run()
+    ~~~~~~~~~~^^
+  File "C:\Users\Admin\miniconda3\Lib\site-packages\uvicorn\server.py", line 75, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "C:\Users\Admin\miniconda3\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\Admin\miniconda3\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\Admin\miniconda3\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\Admin\miniconda3\Lib\site-packages\uvicorn\server.py", line 79, in serve
+    await self._serve(sockets)
+  File "C:\Users\Admin\miniconda3\Lib\site-packages\uvicorn\server.py", line 86, in _serve
+    config.load()
+    ~~~~~~~~~~~^^
+  File "C:\Users\Admin\miniconda3\Lib\site-packages\uvicorn\config.py", line 449, in load
+    self.loaded_app = import_from_string(self.app)
+                      ~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\Admin\miniconda3\Lib\site-packages\uvicorn\importer.py", line 19, in import_from_string
+    module = importlib.import_module(module_str)
+  File "C:\Users\Admin\miniconda3\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1023, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\notas\2026\Trabajo Final\Trabajo-final-Prog4\Parcial2Prog4\Parcial2Prog4\Backend\main.py", line 14, in <module>
+    from modules.CatalogoDeProductos.Categoria.router import router as categoria_router
+  File "C:\notas\2026\Trabajo Final\Trabajo-final-Prog4\Parcial2Prog4\Parcial2Prog4\Backend\modules\CatalogoDeProductos\Categoria\router.py", line 6, in <module>
+    from modules.IdentidadYAcceso.Auth.dependencies import require_roles
+  File "C:\notas\2026\Trabajo Final\Trabajo-final-Prog4\Parcial2Prog4\Parcial2Prog4\Backend\modules\IdentidadYAcceso\Auth\dependencies.py", line 7, in <module>
+    from modules.IdentidadYAcceso.Usuario.models import Usuario
+  File "C:\notas\2026\Trabajo Final\Trabajo-final-Prog4\Parcial2Prog4\Parcial2Prog4\Backend\modules\IdentidadYAcceso\Usuario\models.py", line 10, in <module>
+    from modules.VentasPagosTrazabilidad.Pedido.models import Pedido
+  File "C:\notas\2026\Trabajo Final\Trabajo-final-Prog4\Parcial2Prog4\Parcial2Prog4\Backend\modules\VentasPagosTrazabilidad\Pedido\models.py", line 52, in <module>
+    from modules.IdentidadYAcceso.Usuario.models import Usuario  # noqa: E402, F401
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ImportError: cannot import name 'Usuario' from partially initialized module 'modules.IdentidadYAcceso.Usuario.models' (most likely due to a circular import) (C:\notas\2026\Trabajo Final\Trabajo-final-Prog4\Parcial2Prog4\Parcial2Prog4\Backend\modules\IdentidadYAcceso\Usuario\models.py)

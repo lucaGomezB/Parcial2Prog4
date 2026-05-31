@@ -1,5 +1,5 @@
 import { Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import CategoriasCRUD from './pages/CategoriasCRUD'
 import IngredientesCRUD from './pages/IngredientesCRUD'
 import ProductosCRUD from './pages/ProductosCRUD'
@@ -9,8 +9,10 @@ import DireccionesPage from './pages/DireccionesPage'
 import AdminUsuariosPage from './pages/AdminUsuariosPage'
 import SessionTimeoutModal from './components/SessionTimeoutModal'
 import Login from './pages/LoginConceptual'
-import { clearAuth, getAccessToken, apiFetch, getUserInfo } from './api/client'
+import { apiFetch, getAccessToken, refreshSession } from './api/client'
+import type { UserInfo } from './api/client'
 import { getItemCount } from './utils/carrito'
+import { useAuthStore } from './store/authStore'
 
 /* ── Helpers ── */
 function hasRole(roles: string[], ...allowed: string[]) {
@@ -18,43 +20,34 @@ function hasRole(roles: string[], ...allowed: string[]) {
 }
 
 function App() {
-  const [userRoles, setUserRoles] = useState<string[] | null>(null)
   const [verifying, setVerifying] = useState(true)
+  const roles = useAuthStore((s) => s.roles)
   const navigate = useNavigate()
 
   useEffect(() => {
-    async function checkAuth() {
-      const token = getAccessToken()
+    async function bootstrap() {
+      // Intentar renovar sesión vía cookie httpOnly (refresh token)
+      const hasSession = await refreshSession()
 
-      if (!token) {
-        // Sin token → invitado
-        setUserRoles([])
+      if (!hasSession) {
+        // Sin sesión activa → login
+        useAuthStore.getState().logout()
         setVerifying(false)
         return
       }
 
-      // Hay token → verificar contra backend
+      // Sesión renovada → obtener datos del usuario
       try {
-        await apiFetch('/auth/me')
-        const user = getUserInfo()
-        setUserRoles(user?.roles ?? [])
+        const user = await apiFetch<UserInfo>('/auth/me')
+        useAuthStore.getState().setUser(user)
       } catch {
-        // Token expirado o inválido
-        clearAuth()
-        setUserRoles(null)
+        // El interceptor ya llamó store.logout() si falló
       }
       setVerifying(false)
     }
 
-    checkAuth()
+    bootstrap()
   }, [])
-
-  // ── Escuchar evento auth:login-required desde SessionTimeoutModal ──
-  useEffect(() => {
-    const handler = () => setUserRoles(null);
-    window.addEventListener('auth:login-required', handler);
-    return () => window.removeEventListener('auth:login-required', handler);
-  }, []);
 
   const handleLogout = async () => {
     try {
@@ -62,8 +55,7 @@ function App() {
     } catch {
       // Si falla, igual limpiamos localmente
     }
-    clearAuth()
-    setUserRoles(null)
+    useAuthStore.getState().logout()
     navigate('/login')
   }
 
@@ -75,21 +67,22 @@ function App() {
     )
   }
 
-  if (userRoles === null) {
+  // ── roles === null → necesita login (nunca autenticado o después de logout) ──
+  if (roles === null) {
     return (
       <Routes>
-        <Route path="/login" element={<Login onLogin={(roles) => setUserRoles(roles)} />} />
+        <Route path="/login" element={<Login />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     )
   }
 
+  // ── Desde acá roles es string[] (invitado o autenticado) ──
   const isGuest = !getAccessToken();
-  const isClient = !isGuest && !hasRole(userRoles, 'ADMIN', 'STOCK', 'PEDIDOS')
-  const isAdmin = hasRole(userRoles, 'ADMIN')
-  const isStock = hasRole(userRoles, 'STOCK')
-  const isPedidos = hasRole(userRoles, 'PEDIDOS')
-  const canSeeFullNav = isAdmin
+  const isClient = !isGuest && !hasRole(roles, 'ADMIN', 'STOCK', 'PEDIDOS')
+  const isAdmin = hasRole(roles, 'ADMIN')
+  const isStock = hasRole(roles, 'STOCK')
+  const isPedidos = hasRole(roles, 'PEDIDOS')
 
   const cartCount = getItemCount()
 
@@ -120,7 +113,7 @@ function App() {
       { to: '/productos', label: 'Productos' },
       { to: '/pedidos', label: 'Pedidos' },
       { to: '/direcciones', label: 'Direcciones' },
-      ...(isGuest ? [] : [{ to: '/carrito', label: `Carrito${cartCount > 0 ? ` (${cartCount})` : ''}` }]),
+      { to: '/carrito', label: `Carrito${cartCount > 0 ? ` (${cartCount})` : ''}` },
     ];
     navItems.splice(0, 0, { to: '/admin/usuarios', label: 'Usuarios' });
   } else {
@@ -128,7 +121,7 @@ function App() {
       { to: '/productos', label: 'Productos' },
       { to: '/pedidos', label: 'Pedidos' },
       { to: '/direcciones', label: 'Direcciones' },
-      ...(isGuest ? [] : [{ to: '/carrito', label: `Carrito${cartCount > 0 ? ` (${cartCount})` : ''}` }]),
+      { to: '/carrito', label: `Carrito${cartCount > 0 ? ` (${cartCount})` : ''}` },
     ];
   }
 
@@ -163,8 +156,8 @@ function App() {
             // Determinar el role para ProductosCRUD según los roles del usuario
             let productRole: 'admin' | 'stock' | 'pedidos' | 'client';
             if (isClient || isGuest) productRole = 'client';
-            else if (hasRole(userRoles, 'ADMIN')) productRole = 'admin';
-            else if (hasRole(userRoles, 'STOCK')) productRole = 'stock';
+            else if (hasRole(roles, 'ADMIN')) productRole = 'admin';
+            else if (hasRole(roles, 'STOCK')) productRole = 'stock';
             else productRole = 'pedidos';
 
             if (isClient) {

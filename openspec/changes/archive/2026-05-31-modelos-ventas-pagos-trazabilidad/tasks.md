@@ -73,4 +73,4 @@
 
 - [x] 10.1 Ejecutar `python scripts/sprint_seed.py` y verificar que crea todos los datos sin errores
 - [x] 10.2 Verificar que `SQLModel.metadata.create_all()` genera todas las tablas nuevas
-- [ ] 10.3 Verificar que los endpoints nuevos responden correctamente (requiere iniciar el servidor)
+- [x] 10.3 Verificar que los endpoints nuevos responden correctamente (requiere iniciar el servidor) ✅ verificado por el usuario — flujo de pedidos funciona correctamente

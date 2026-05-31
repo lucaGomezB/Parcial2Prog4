@@ -18,6 +18,7 @@ import {
   type DireccionEntregaInput,
 } from "../api/direcciones";
 import { getAccessToken } from "../api/client";
+import { useAppForm, required } from "../hooks/useAppForm";
 
 /* ── Modal rápido para crear dirección desde el carrito ── */
 function NuevaDireccionModal({
@@ -27,80 +28,97 @@ function NuevaDireccionModal({
   onClose: () => void;
   onSave: (data: DireccionEntregaInput) => Promise<void>;
 }) {
-  const [alias, setAlias] = useState("");
-  const [linea1, setLinea1] = useState("");
-  const [linea2, setLinea2] = useState("");
-  const [ciudad, setCiudad] = useState("");
   const [guardando, setGuardando] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!linea1.trim() || !ciudad.trim()) return;
-    setGuardando(true);
-    try {
-      await onSave({
-        alias: alias.trim() || null,
-        linea1: linea1.trim(),
-        linea2: linea2.trim() || null,
-        ciudad: ciudad.trim(),
-        es_principal: false,
-      });
-      onClose();
-    } finally {
-      setGuardando(false);
-    }
-  };
+  const form = useAppForm({
+    defaultValues: { alias: "", linea1: "", linea2: "", ciudad: "" },
+    onSubmit: async ({ value }) => {
+      setGuardando(true);
+      try {
+        await onSave({
+          alias: value.alias.trim() || null,
+          linea1: value.linea1.trim(),
+          linea2: value.linea2.trim() || null,
+          ciudad: value.ciudad.trim(),
+          es_principal: false,
+        });
+        onClose();
+      } finally {
+        setGuardando(false);
+      }
+    },
+  });
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white rounded p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-bold mb-4">Nueva Dirección de Entrega</h2>
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void form.handleSubmit(); }} className="space-y-3">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Alias</label>
-            <input
-              value={alias}
-              onChange={(e) => setAlias(e.target.value)}
-              placeholder="Ej: Casa, Trabajo..."
-              maxLength={50}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-            />
+            <form.Field name="alias">
+              {(field) => (
+                <input
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  placeholder="Ej: Casa, Trabajo..."
+                  maxLength={50}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                />
+              )}
+            </form.Field>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Calle y Número <span className="text-red-500">*</span>
             </label>
-            <input
-              value={linea1}
-              onChange={(e) => setLinea1(e.target.value)}
-              placeholder="Av. Siempre Viva 123"
-              required
-              maxLength={100}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-            />
+            <form.Field name="linea1" validators={{ onChange: required() }}>
+              {(field) => (
+                <input
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  placeholder="Av. Siempre Viva 123"
+                  required
+                  maxLength={100}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                />
+              )}
+            </form.Field>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Piso / Dpto</label>
-            <input
-              value={linea2}
-              onChange={(e) => setLinea2(e.target.value)}
-              placeholder="Piso 3, Dpto B"
-              maxLength={100}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-            />
+            <form.Field name="linea2">
+              {(field) => (
+                <input
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  placeholder="Piso 3, Dpto B"
+                  maxLength={100}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                />
+              )}
+            </form.Field>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Ciudad <span className="text-red-500">*</span>
             </label>
-            <input
-              value={ciudad}
-              onChange={(e) => setCiudad(e.target.value)}
-              placeholder="Ciudad"
-              required
-              maxLength={100}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-            />
+            <form.Field name="ciudad" validators={{ onChange: required() }}>
+              {(field) => (
+                <input
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  placeholder="Ciudad"
+                  required
+                  maxLength={100}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                />
+              )}
+            </form.Field>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button
@@ -112,7 +130,7 @@ function NuevaDireccionModal({
             </button>
             <button
               type="submit"
-              disabled={guardando || !linea1.trim() || !ciudad.trim()}
+              disabled={guardando || !form.state.values.linea1.trim() || !form.state.values.ciudad.trim()}
               className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
             >
               {guardando ? "Guardando..." : "Agregar"}

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import type { CategoriaCreate, CategoriaTree } from "../api/categorias";
 import { categoriasApi } from "../api/categorias";
 import { exportToExcel } from "../utils/exportExcel";
+import { useAppForm, required } from "../hooks/useAppForm";
 
 
 /* ── Helpers ── */
@@ -186,11 +187,24 @@ export default function CategoriasCRUD() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<CategoriaCreate>({
-    nombre: "", descripcion: "", parent_id: null, orden_display: 0,
-  });
-  const [selectedParentId, setSelectedParentId] = useState<number | null>(null);
   const [selectedParentName, setSelectedParentName] = useState("");
+
+  const form = useAppForm<CategoriaCreate>({
+    defaultValues: { nombre: "", descripcion: "", parent_id: null, orden_display: 0 },
+    onSubmit: async ({ value }) => {
+      try {
+        if (editingId) {
+          await categoriasApi.update(editingId, value);
+        } else {
+          await categoriasApi.create(value);
+        }
+        handleCloseForm();
+        loadTree();
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    },
+  });
   const [showParentSelector, setShowParentSelector] = useState(false);
 
   const formRef = useRef<HTMLFormElement>(null);
@@ -226,7 +240,7 @@ export default function CategoriasCRUD() {
   const handleEdit = (cat: CategoriaTree) => {
     setEditingId(cat.id);
     setShowForm(true);
-    setForm({
+    form.reset({
       nombre: cat.nombre,
       descripcion: cat.descripcion ?? "",
       parent_id: cat.parent_id,
@@ -241,7 +255,6 @@ export default function CategoriasCRUD() {
       }
       return "";
     };
-    setSelectedParentId(cat.parent_id);
     setSelectedParentName(cat.parent_id !== null ? findParent(treeData) : "");
     setShowParentSelector(false);
   };
@@ -249,8 +262,7 @@ export default function CategoriasCRUD() {
   const handleCreate = () => {
     setEditingId(null);
     setShowForm(true);
-    setForm({ nombre: "", descripcion: "", parent_id: null, orden_display: 0 });
-    setSelectedParentId(null);
+    form.reset({ nombre: "", descripcion: "", parent_id: null, orden_display: 0 });
     setSelectedParentName("");
     setShowParentSelector(false);
   };
@@ -258,24 +270,8 @@ export default function CategoriasCRUD() {
   const handleCloseForm = () => {
     setShowForm(false);
     setEditingId(null);
-    setForm({ nombre: "", descripcion: "", parent_id: null, orden_display: 0 });
-    setSelectedParentId(null);
+    form.reset({ nombre: "", descripcion: "", parent_id: null, orden_display: 0 });
     setSelectedParentName("");
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      if (editingId) {
-        await categoriasApi.update(editingId, form);
-      } else {
-        await categoriasApi.create(form);
-      }
-      handleCloseForm();
-      loadTree();
-    } catch (err) {
-      setError((err as Error).message);
-    }
   };
 
   const handleDelete = async (id: number) => {
@@ -313,21 +309,35 @@ export default function CategoriasCRUD() {
       </div>
 
       {showForm && (
-        <form ref={formRef} onSubmit={handleSubmit} className="border p-4 mb-4 rounded bg-gray-50 grid grid-cols-2 gap-2">
+        <form ref={formRef} onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void form.handleSubmit(); }} className="border p-4 mb-4 rounded bg-gray-50 grid grid-cols-2 gap-2">
           <div>
             <label className="block text-sm font-medium">Nombre</label>
-            <input value={form.nombre}
-              onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-              className="border px-2 py-1 rounded w-full" required />
+            <form.Field name="nombre" validators={{ onChange: required() }}>
+              {(field) => (
+                <input
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  className="border px-2 py-1 rounded w-full"
+                />
+              )}
+            </form.Field>
           </div>
           <div>
             <label className="block text-sm font-medium">Descripción</label>
-            <input value={form.descripcion ?? ""}
-              onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
-              className="border px-2 py-1 rounded w-full" />
+            <form.Field name="descripcion">
+              {(field) => (
+                <input
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  className="border px-2 py-1 rounded w-full"
+                />
+              )}
+            </form.Field>
           </div>
           <div>
-            <label className="block text-sm font-medium">Categoría Padre</label>
+            <label className="block text-sm font-medium">Es una subcategoría de:</label>
             <div className="flex gap-2">
               <input value={selectedParentName} readOnly className="border px-2 py-1 rounded flex-1" placeholder="Sin padre" />
               <button type="button" onClick={() => setShowParentSelector(true)}
@@ -350,13 +360,9 @@ export default function CategoriasCRUD() {
           treeData={treeData}
           currentId={editingId}
           onSelect={(id, name) => {
-            setSelectedParentId(id);
+            form.setFieldValue('parent_id', id);
             setSelectedParentName(name);
             setShowParentSelector(false);
-            setForm((f) => ({
-              ...f,
-              parent_id: id,
-            }));
           }}
           onClose={() => setShowParentSelector(false)}
         />

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useAppForm, required } from "../hooks/useAppForm";
 import {
   direccionesApi,
   formatDireccion,
@@ -8,6 +9,17 @@ import {
 } from "../api/direcciones";
 
 /* ── Modal compartido para crear/editar ── */
+
+interface DireccionFormFields {
+  alias: string;
+  linea1: string;
+  linea2: string;
+  ciudad: string;
+  provincia: string;
+  codigo_postal: string;
+  es_principal: boolean;
+}
+
 function DireccionModal({
   direccion,
   onClose,
@@ -17,40 +29,35 @@ function DireccionModal({
   onClose: () => void;
   onSave: (data: DireccionEntregaInput | DireccionEntregaUpdate) => Promise<void>;
 }) {
-  const [alias, setAlias] = useState(direccion?.alias ?? "");
-  const [linea1, setLinea1] = useState(direccion?.linea1 ?? "");
-  const [linea2, setLinea2] = useState(direccion?.linea2 ?? "");
-  const [ciudad, setCiudad] = useState(direccion?.ciudad ?? "");
-  const [provincia, setProvincia] = useState(direccion?.provincia ?? "");
-  const [codigoPostal, setCodigoPostal] = useState(direccion?.codigo_postal ?? "");
-  const [esPrincipal, setEsPrincipal] = useState(direccion?.es_principal ?? false);
-  const [guardando, setGuardando] = useState(false);
-
   const esEditar = !!direccion;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!linea1.trim() || !ciudad.trim()) return;
-    setGuardando(true);
-    try {
+  const form = useAppForm<DireccionFormFields>({
+    defaultValues: {
+      alias: direccion?.alias ?? "",
+      linea1: direccion?.linea1 ?? "",
+      linea2: direccion?.linea2 ?? "",
+      ciudad: direccion?.ciudad ?? "",
+      provincia: direccion?.provincia ?? "",
+      codigo_postal: direccion?.codigo_postal ?? "",
+      es_principal: direccion?.es_principal ?? false,
+    },
+    onSubmit: async ({ value }) => {
       const base = {
-        alias: alias.trim() || null,
-        linea1: linea1.trim(),
-        linea2: linea2.trim() || null,
-        ciudad: ciudad.trim(),
-        provincia: provincia.trim() || null,
-        codigo_postal: codigoPostal.trim() || null,
+        alias: value.alias.trim() || null,
+        linea1: value.linea1.trim(),
+        linea2: value.linea2.trim() || null,
+        ciudad: value.ciudad.trim(),
+        provincia: value.provincia.trim() || null,
+        codigo_postal: value.codigo_postal.trim() || null,
       };
       if (esEditar) {
-        await onSave({ ...base, es_principal: esPrincipal } satisfies DireccionEntregaUpdate & { es_principal: boolean });
+        await onSave({ ...base, es_principal: value.es_principal } satisfies DireccionEntregaUpdate & { es_principal: boolean });
       } else {
-        await onSave({ ...base, es_principal: esPrincipal } satisfies DireccionEntregaInput);
+        await onSave({ ...base, es_principal: value.es_principal } satisfies DireccionEntregaInput);
       }
       onClose();
-    } finally {
-      setGuardando(false);
-    }
-  };
+    },
+  });
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
@@ -58,85 +65,130 @@ function DireccionModal({
         <h2 className="text-lg font-bold mb-4">
           {esEditar ? "Editar Dirección" : "Nueva Dirección"}
         </h2>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Alias</label>
-            <input
-              value={alias}
-              onChange={(e) => setAlias(e.target.value)}
-              placeholder="Ej: Casa, Trabajo..."
-              maxLength={50}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Calle y Número <span className="text-red-500">*</span>
-            </label>
-            <input
-              value={linea1}
-              onChange={(e) => setLinea1(e.target.value)}
-              placeholder="Av. Siempre Viva 123"
-              required
-              maxLength={100}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Piso / Dpto</label>
-            <input
-              value={linea2}
-              onChange={(e) => setLinea2(e.target.value)}
-              placeholder="Piso 3, Dpto B"
-              maxLength={100}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-            />
-          </div>
+        <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void form.handleSubmit(); }} className="space-y-3">
+          <form.Field name="alias">
+            {(field) => (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Alias</label>
+                <input
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  placeholder="Ej: Casa, Trabajo..."
+                  maxLength={50}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                />
+              </div>
+            )}
+          </form.Field>
+          <form.Field
+            name="linea1"
+            validators={{ onChange: required() }}
+          >
+            {(field) => (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Calle y Número <span className="text-red-500">*</span>
+                </label>
+                <input
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  placeholder="Av. Siempre Viva 123"
+                  required
+                  maxLength={100}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                />
+              </div>
+            )}
+          </form.Field>
+          <form.Field name="linea2">
+            {(field) => (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Piso / Dpto</label>
+                <input
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  placeholder="Piso 3, Dpto B"
+                  maxLength={100}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                />
+              </div>
+            )}
+          </form.Field>
           <div className="flex gap-3">
             <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Ciudad <span className="text-red-500">*</span>
-              </label>
-              <input
-                value={ciudad}
-                onChange={(e) => setCiudad(e.target.value)}
-                placeholder="Ciudad"
-                required
-                maxLength={100}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-              />
+              <form.Field
+                name="ciudad"
+                validators={{ onChange: required() }}
+              >
+                {(field) => (
+                  <>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Ciudad <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      value={field.state.value}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      onBlur={field.handleBlur}
+                      placeholder="Ciudad"
+                      required
+                      maxLength={100}
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                    />
+                  </>
+                )}
+              </form.Field>
             </div>
             <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Provincia</label>
-              <input
-                value={provincia}
-                onChange={(e) => setProvincia(e.target.value)}
-                placeholder="Provincia"
-                maxLength={100}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-              />
+              <form.Field name="provincia">
+                {(field) => (
+                  <>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Provincia</label>
+                    <input
+                      value={field.state.value}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      onBlur={field.handleBlur}
+                      placeholder="Provincia"
+                      maxLength={100}
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                    />
+                  </>
+                )}
+              </form.Field>
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Código Postal</label>
-            <input
-              value={codigoPostal}
-              onChange={(e) => setCodigoPostal(e.target.value)}
-              placeholder="5000"
-              maxLength={10}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-            />
-          </div>
+          <form.Field name="codigo_postal">
+            {(field) => (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Código Postal</label>
+                <input
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  placeholder="5000"
+                  maxLength={10}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                />
+              </div>
+            )}
+          </form.Field>
 
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={esPrincipal}
-              onChange={(e) => setEsPrincipal(e.target.checked)}
-              className="cursor-pointer"
-            />
-            <span className="font-medium text-gray-700">Marcar como dirección principal</span>
-          </label>
+          <form.Field name="es_principal">
+            {(field) => (
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.checked)}
+                  onBlur={field.handleBlur}
+                  className="cursor-pointer"
+                />
+                <span className="font-medium text-gray-700">Marcar como dirección principal</span>
+              </label>
+            )}
+          </form.Field>
 
           <div className="flex justify-end gap-2 pt-2">
             <button
@@ -148,10 +200,10 @@ function DireccionModal({
             </button>
             <button
               type="submit"
-              disabled={guardando || !linea1.trim() || !ciudad.trim()}
+              disabled={form.state.isSubmitting || !form.state.values.linea1.trim() || !form.state.values.ciudad.trim()}
               className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
             >
-              {guardando ? "Guardando..." : esEditar ? "Actualizar" : "Crear"}
+              {form.state.isSubmitting ? "Guardando..." : esEditar ? "Actualizar" : "Crear"}
             </button>
           </div>
         </form>
@@ -159,7 +211,6 @@ function DireccionModal({
     </div>
   );
 }
-
 /* ── Página principal ── */
 export default function DireccionesPage() {
   const [direcciones, setDirecciones] = useState<DireccionEntrega[]>([]);

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { usuariosApi, type Usuario, type UsuarioCreate, type UsuarioUpdate } from "../api/usuarios";
 import { apiFetch, getUserRoles } from "../api/client";
+import { useAppForm, required, email, minLength, composeValidators } from "../hooks/useAppForm";
 
 const PAGE_SIZE = 10;
 
@@ -22,14 +23,41 @@ function EditarUsuarioModal({
   onClose: () => void;
   onSave: (id: number, data: UsuarioUpdate) => Promise<void>;
 }) {
-  const [nombre, setNombre] = useState(usuario.nombre);
-  const [apellido, setApellido] = useState(usuario.apellido);
-  const [email, setEmail] = useState(usuario.email);
-  const [celular, setCelular] = useState(usuario.celular ?? "");
   const [rolesSel, setRolesSel] = useState<string[]>(
     usuario.roles.map((r) => r.codigo)
   );
   const [guardando, setGuardando] = useState(false);
+
+  interface EditarForm {
+    nombre: string;
+    apellido: string;
+    email: string;
+    celular: string;
+  }
+
+  const form = useAppForm<EditarForm>({
+    defaultValues: {
+      nombre: usuario.nombre,
+      apellido: usuario.apellido,
+      email: usuario.email,
+      celular: usuario.celular ?? "",
+    },
+    onSubmit: async ({ value }) => {
+      setGuardando(true);
+      try {
+        await onSave(usuario.id, {
+          nombre: value.nombre.trim(),
+          apellido: value.apellido.trim(),
+          email: value.email.trim(),
+          celular: value.celular.trim() || null,
+          roles_codigos: rolesSel,
+        });
+        onClose();
+      } finally {
+        setGuardando(false);
+      }
+    },
+  });
 
   const toggleRol = (codigo: string) => {
     setRolesSel((prev) =>
@@ -37,23 +65,6 @@ function EditarUsuarioModal({
         ? prev.filter((c) => c !== codigo)
         : [...prev, codigo]
     );
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setGuardando(true);
-    try {
-      await onSave(usuario.id, {
-        nombre: nombre.trim(),
-        apellido: apellido.trim(),
-        email: email.trim(),
-        celular: celular.trim() || null,
-        roles_codigos: rolesSel,
-      });
-      onClose();
-    } finally {
-      setGuardando(false);
-    }
   };
 
   return (
@@ -68,52 +79,80 @@ function EditarUsuarioModal({
         <h2 className="text-lg font-bold mb-4">
           Editar Usuario #{usuario.id}
         </h2>
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void form.handleSubmit(); }} className="space-y-3">
           <div className="flex gap-3">
             <div className="flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Nombre
               </label>
-              <input
-                value={nombre}
-                onChange={(e) => setNombre(e.target.value)}
-                required
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-              />
+              <form.Field
+                name="nombre"
+                validators={{ onChange: composeValidators(required()) }}
+              >
+                {(field) => (
+                  <input
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                  />
+                )}
+              </form.Field>
             </div>
             <div className="flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Apellido
               </label>
-              <input
-                value={apellido}
-                onChange={(e) => setApellido(e.target.value)}
-                required
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-              />
+              <form.Field
+                name="apellido"
+                validators={{ onChange: composeValidators(required()) }}
+              >
+                {(field) => (
+                  <input
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                  />
+                )}
+              </form.Field>
             </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Email
             </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-            />
+            <form.Field
+              name="email"
+              validators={{
+                onChange: composeValidators(required(), email()),
+              }}
+            >
+              {(field) => (
+                <input
+                  type="email"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                />
+              )}
+            </form.Field>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Celular
             </label>
-            <input
-              value={celular}
-              onChange={(e) => setCelular(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-            />
+            <form.Field name="celular">
+              {(field) => (
+                <input
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                />
+              )}
+            </form.Field>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -168,15 +207,56 @@ function CrearUsuarioModal({
   onClose: () => void;
   onSave: (data: UsuarioCreate) => Promise<void>;
 }) {
-  const [nombre, setNombre] = useState("");
-  const [apellido, setApellido] = useState("");
-  const [email, setEmail] = useState("");
-  const [celular, setCelular] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [rolesSel, setRolesSel] = useState<string[]>(["CLIENT"]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  interface CrearForm {
+    nombre: string;
+    apellido: string;
+    email: string;
+    celular: string;
+    password: string;
+    confirmPassword: string;
+  }
+
+  const form = useAppForm<CrearForm>({
+    defaultValues: {
+      nombre: "",
+      apellido: "",
+      email: "",
+      celular: "",
+      password: "",
+      confirmPassword: "",
+    },
+    onSubmit: async ({ value }) => {
+      setError(null);
+
+      if (value.password.length < 6) {
+        setError("La contraseña debe tener al menos 6 caracteres");
+        return;
+      }
+      if (value.password !== value.confirmPassword) {
+        setError("Las contraseñas no coinciden");
+        return;
+      }
+
+      setGuardando(true);
+      try {
+        await onSave({
+          nombre: value.nombre.trim(),
+          apellido: value.apellido.trim(),
+          email: value.email.trim(),
+          celular: value.celular.trim() || null,
+          password: value.password,
+          roles_codigos: rolesSel,
+        });
+        onClose();
+      } finally {
+        setGuardando(false);
+      }
+    },
+  });
 
   const toggleRol = (codigo: string) => {
     setRolesSel((prev) =>
@@ -184,35 +264,6 @@ function CrearUsuarioModal({
         ? prev.filter((c) => c !== codigo)
         : [...prev, codigo]
     );
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    if (password.length < 6) {
-      setError("La contraseña debe tener al menos 6 caracteres");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError("Las contraseñas no coinciden");
-      return;
-    }
-
-    setGuardando(true);
-    try {
-      await onSave({
-        nombre: nombre.trim(),
-        apellido: apellido.trim(),
-        email: email.trim(),
-        celular: celular.trim() || null,
-        password,
-        roles_codigos: rolesSel,
-      });
-      onClose();
-    } finally {
-      setGuardando(false);
-    }
   };
 
   return (
@@ -225,7 +276,7 @@ function CrearUsuarioModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-lg font-bold mb-4">Crear Usuario</h2>
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void form.handleSubmit(); }} className="space-y-3">
           {error && (
             <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded text-sm">
               {error}
@@ -237,23 +288,37 @@ function CrearUsuarioModal({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Nombre
               </label>
-              <input
-                value={nombre}
-                onChange={(e) => setNombre(e.target.value)}
-                required
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-              />
+              <form.Field
+                name="nombre"
+                validators={{ onChange: composeValidators(required()) }}
+              >
+                {(field) => (
+                  <input
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                  />
+                )}
+              </form.Field>
             </div>
             <div className="flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Apellido
               </label>
-              <input
-                value={apellido}
-                onChange={(e) => setApellido(e.target.value)}
-                required
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-              />
+              <form.Field
+                name="apellido"
+                validators={{ onChange: composeValidators(required()) }}
+              >
+                {(field) => (
+                  <input
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                  />
+                )}
+              </form.Field>
             </div>
           </div>
 
@@ -261,24 +326,38 @@ function CrearUsuarioModal({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Email
             </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-            />
+            <form.Field
+              name="email"
+              validators={{
+                onChange: composeValidators(required(), email()),
+              }}
+            >
+              {(field) => (
+                <input
+                  type="email"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                />
+              )}
+            </form.Field>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Celular
             </label>
-            <input
-              value={celular}
-              onChange={(e) => setCelular(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-            />
+            <form.Field name="celular">
+              {(field) => (
+                <input
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                />
+              )}
+            </form.Field>
           </div>
 
           <div className="flex gap-3">
@@ -286,26 +365,43 @@ function CrearUsuarioModal({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Contraseña
               </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-              />
+              <form.Field
+                name="password"
+                validators={{
+                  onChange: composeValidators(required(), minLength(6)),
+                }}
+              >
+                {(field) => (
+                  <input
+                    type="password"
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                  />
+                )}
+              </form.Field>
             </div>
             <div className="flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Confirmar contraseña
               </label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-              />
+              <form.Field
+                name="confirmPassword"
+                validators={{
+                  onChange: composeValidators(required(), minLength(6)),
+                }}
+              >
+                {(field) => (
+                  <input
+                    type="password"
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                  />
+                )}
+              </form.Field>
             </div>
           </div>
 

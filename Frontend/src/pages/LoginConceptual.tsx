@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiFetch, setToken, setUserInfo, clearAuth } from "../api/client";
+import { apiFetch, setToken, setUserInfo } from "../api/client";
+import { useAuthStore } from "../store/authStore";
+import {
+  useAppForm,
+  composeValidators,
+  required,
+  email,
+  minLength,
+} from "../hooks/useAppForm";
 
 interface LoginResponse {
   access_token: string;
@@ -19,14 +27,17 @@ interface UserInfo {
 
 type Modo = "login" | "register";
 
-export default function Login({ onLogin }: { onLogin: (roles: string[]) => void }) {
+type LoginFormValues = {
+  email: string;
+  password: string;
+  confirmPassword: string;
+  nombre: string;
+  apellido: string;
+  celular: string;
+};
+
+export default function Login({ onLogin }: { onLogin?: () => void }) {
   const [modo, setModo] = useState<Modo>("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [nombre, setNombre] = useState("");
-  const [apellido, setApellido] = useState("");
-  const [celular, setCelular] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -36,99 +47,88 @@ export default function Login({ onLogin }: { onLogin: (roles: string[]) => void 
   const finalizarAuth = async () => {
     const userInfo = await apiFetch<UserInfo>("/auth/me");
     setUserInfo(userInfo);
-    onLogin(userInfo.roles);
+    onLogin?.();
     navigate("/");
   };
 
-  // ── Login ──
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setIsLoading(true);
+  const form = useAppForm<LoginFormValues>({
+    defaultValues: {
+      email: "",
+      password: "",
+      confirmPassword: "",
+      nombre: "",
+      apellido: "",
+      celular: "",
+    },
+    onSubmit: async ({ value }) => {
+      setError("");
+      setIsLoading(true);
 
-    try {
-      const response = await apiFetch<LoginResponse>("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ email, password }),
-      });
+      try {
+        if (modo === "login") {
+          const response = await apiFetch<LoginResponse>("/auth/login", {
+            method: "POST",
+            body: JSON.stringify({ email: value.email, password: value.password }),
+          });
 
-      setToken(response.access_token, response.expires_in);
-      await finalizarAuth();
-    } catch (err: unknown) {
-      console.error("Login error:", err);
-
-      if (err instanceof TypeError && err.message === "Failed to fetch") {
-        setError("No se puede conectar con el servidor. Asegurate de que el backend esté corriendo (uvicorn).");
-      } else if (err instanceof Error && err.message) {
-        const axiosErr = err as Record<string, unknown>;
-        const responseData = axiosErr?.response?.data as Record<string, unknown> | undefined;
-        if (responseData?.detail) {
-          setError(String(responseData.detail));
+          setToken(response.access_token, response.expires_in);
+          await finalizarAuth();
         } else {
-          setError("Email o contraseña incorrectos");
+          if (value.password !== value.confirmPassword) {
+            setError("Las contraseñas no coinciden");
+            return;
+          }
+
+          const response = await apiFetch<LoginResponse>("/auth/register", {
+            method: "POST",
+            body: JSON.stringify({
+              nombre: value.nombre.trim(),
+              apellido: value.apellido.trim(),
+              email: value.email.trim(),
+              celular: value.celular.trim() || null,
+              password: value.password,
+            }),
+          });
+
+          setToken(response.access_token, response.expires_in);
+          await finalizarAuth();
         }
-      } else {
-        setError("Error inesperado. Revisa la consola para más detalles.");
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      } catch (err: unknown) {
+        console.error("Auth error:", err);
 
-  // ── Registro ──
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    if (password.length < 6) {
-      setError("La contraseña debe tener al menos 6 caracteres");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError("Las contraseñas no coinciden");
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      const response = await apiFetch<LoginResponse>("/auth/register", {
-        method: "POST",
-        body: JSON.stringify({
-          nombre: nombre.trim(),
-          apellido: apellido.trim(),
-          email: email.trim(),
-          celular: celular.trim() || null,
-          password,
-        }),
-      });
-
-      setToken(response.access_token, response.expires_in);
-      await finalizarAuth();
-    } catch (err: unknown) {
-      console.error("Register error:", err);
-
-      if (err instanceof TypeError && err.message === "Failed to fetch") {
-        setError("No se puede conectar con el servidor.");
-      } else if (err instanceof Error && err.message) {
-        const axiosErr = err as Record<string, unknown>;
-        const responseData = axiosErr?.response?.data as Record<string, unknown> | undefined;
-        if (responseData?.detail) {
-          setError(String(responseData.detail));
+        if (err instanceof TypeError && err.message === "Failed to fetch") {
+          setError(
+            modo === "login"
+              ? "No se puede conectar con el servidor. Asegurate de que el backend esté corriendo (uvicorn)."
+              : "No se puede conectar con el servidor."
+          );
+        } else if (err instanceof Error && err.message) {
+          const axiosErr = err as unknown as { response?: { data?: Record<string, unknown> } };
+          const responseData = axiosErr?.response?.data;
+          if (responseData?.detail) {
+            setError(String(responseData.detail));
+          } else {
+            setError(
+              modo === "login"
+                ? "Email o contraseña incorrectos"
+                : "Error al crear la cuenta. Intenta con otro email."
+            );
+          }
         } else {
-          setError("Error al crear la cuenta. Intenta con otro email.");
+          setError(
+            modo === "login"
+              ? "Error inesperado. Revisa la consola para más detalles."
+              : "Error inesperado. Revisa la consola."
+          );
         }
-      } else {
-        setError("Error inesperado. Revisa la consola.");
+      } finally {
+        setIsLoading(false);
       }
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    },
+  });
 
   const handleGuestLogin = () => {
-    clearAuth();
-    onLogin([]);
+    useAuthStore.getState().setRoles([]);
     navigate("/productos");
   };
 
@@ -184,105 +184,171 @@ export default function Login({ onLogin }: { onLogin: (roles: string[]) => void 
           </div>
         )}
 
-        <form onSubmit={modo === "login" ? handleLogin : handleRegister} className="flex flex-col gap-4">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            void form.handleSubmit();
+          }}
+          className="flex flex-col gap-4"
+        >
           {/* ── Campos específicos de registro ── */}
           {modo === "register" && (
             <>
               <div className="flex gap-3">
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
-                  <input
-                    value={nombre}
-                    onChange={(e) => setNombre(e.target.value)}
-                    required
-                    disabled={isLoading}
-                    className="w-full border border-gray-300 px-3 py-2 rounded focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Apellido</label>
-                  <input
-                    value={apellido}
-                    onChange={(e) => setApellido(e.target.value)}
-                    required
-                    disabled={isLoading}
-                    className="w-full border border-gray-300 px-3 py-2 rounded focus:outline-none focus:border-blue-500"
-                  />
-                </div>
+                <form.Field
+                  name="nombre"
+                  validators={{ onChange: required() }}
+                >
+                  {(field) => (
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+                      <input
+                        value={field.state.value}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        onBlur={field.handleBlur}
+                        disabled={isLoading}
+                        className="w-full border border-gray-300 px-3 py-2 rounded focus:outline-none focus:border-blue-500"
+                      />
+                      {field.state.meta.errors.length > 0 && (
+                        <em className="text-red-500 text-xs mt-1 block">{field.state.meta.errors.join(", ")}</em>
+                      )}
+                    </div>
+                  )}
+                </form.Field>
+                <form.Field
+                  name="apellido"
+                  validators={{ onChange: required() }}
+                >
+                  {(field) => (
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Apellido</label>
+                      <input
+                        value={field.state.value}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        onBlur={field.handleBlur}
+                        disabled={isLoading}
+                        className="w-full border border-gray-300 px-3 py-2 rounded focus:outline-none focus:border-blue-500"
+                      />
+                      {field.state.meta.errors.length > 0 && (
+                        <em className="text-red-500 text-xs mt-1 block">{field.state.meta.errors.join(", ")}</em>
+                      )}
+                    </div>
+                  )}
+                </form.Field>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Celular</label>
-                <input
-                  value={celular}
-                  onChange={(e) => setCelular(e.target.value)}
-                  required
-                  disabled={isLoading}
-                  className="w-full border border-gray-300 px-3 py-2 rounded focus:outline-none focus:border-blue-500"
-                />
-              </div>
+              <form.Field
+                name="celular"
+                validators={{ onChange: required() }}
+              >
+                {(field) => (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Celular</label>
+                    <input
+                      value={field.state.value}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      onBlur={field.handleBlur}
+                      disabled={isLoading}
+                      className="w-full border border-gray-300 px-3 py-2 rounded focus:outline-none focus:border-blue-500"
+                    />
+                    {field.state.meta.errors.length > 0 && (
+                      <em className="text-red-500 text-xs mt-1 block">{field.state.meta.errors.join(", ")}</em>
+                    )}
+                  </div>
+                )}
+              </form.Field>
             </>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder={modo === "login" ? "ej: client@email.com" : ""}
-              className="w-full border border-gray-300 px-3 py-2 rounded focus:outline-none focus:border-blue-500"
-              required
-              disabled={isLoading}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full border border-gray-300 px-3 py-2 pr-10 rounded focus:outline-none focus:border-blue-500"
-                required
-                minLength={modo === "register" ? 6 : undefined}
-                disabled={isLoading}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                disabled={isLoading}
-                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 cursor-pointer"
-                tabIndex={-1}
-              >
-                {showPassword ? (
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
-                  </svg>
-                ) : (
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
+          <form.Field
+            name="email"
+            validators={{ onChange: composeValidators(required(), email()) }}
+          >
+            {(field) => (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  placeholder={modo === "login" ? "ej: client@email.com" : ""}
+                  className="w-full border border-gray-300 px-3 py-2 rounded focus:outline-none focus:border-blue-500"
+                  disabled={isLoading}
+                />
+                {field.state.meta.errors.length > 0 && (
+                  <em className="text-red-500 text-xs mt-1 block">{field.state.meta.errors.join(", ")}</em>
                 )}
-              </button>
-            </div>
-          </div>
+              </div>
+            )}
+          </form.Field>
+
+          <form.Field
+            name="password"
+            validators={{ onChange: composeValidators(required(), minLength(6)) }}
+          >
+            {(field) => (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                    placeholder="••••••••"
+                    className="w-full border border-gray-300 px-3 py-2 pr-10 rounded focus:outline-none focus:border-blue-500"
+                    disabled={isLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    disabled={isLoading}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 cursor-pointer"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? (
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                {field.state.meta.errors.length > 0 && (
+                  <em className="text-red-500 text-xs mt-1 block">{field.state.meta.errors.join(", ")}</em>
+                )}
+              </div>
+            )}
+          </form.Field>
 
           {/* ── Confirmar contraseña (solo registro) ── */}
           {modo === "register" && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar contraseña</label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                disabled={isLoading}
-                className="w-full border border-gray-300 px-3 py-2 rounded focus:outline-none focus:border-blue-500"
-              />
-            </div>
+            <form.Field
+              name="confirmPassword"
+              validators={{ onChange: required() }}
+            >
+              {(field) => (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar contraseña</label>
+                  <input
+                    type="password"
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                    disabled={isLoading}
+                    className="w-full border border-gray-300 px-3 py-2 rounded focus:outline-none focus:border-blue-500"
+                  />
+                  {field.state.meta.errors.length > 0 && (
+                    <em className="text-red-500 text-xs mt-1 block">{field.state.meta.errors.join(", ")}</em>
+                  )}
+                </div>
+              )}
+            </form.Field>
           )}
 
           <button

@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
 import type { InternalAxiosRequestConfig } from "axios";
+import { useAuthStore } from "../store/authStore";
 
 const BASE_URL = "/api";
 
@@ -9,7 +10,7 @@ interface TokenInfo {
   expiresAt: number;
 }
 
-interface UserInfo {
+export interface UserInfo {
   id: number;
   nombre: string;
   apellido: string;
@@ -32,55 +33,65 @@ const apiClient = axios.create({
   withCredentials: true,  // Necesario para enviar cookies httpOnly
 });
 
-// ── Token Management (solo access_token en localStorage) ──
-export function getToken(): TokenInfo | null {
-  const tokenData = localStorage.getItem("authToken");
-  if (!tokenData) return null;
-  try {
-    return JSON.parse(tokenData) as TokenInfo;
-  } catch {
-    return null;
-  }
-}
+// ── Token Management (TODO en memoria — nada en localStorage) ──
 
-export function setToken(accessToken: string, expiresIn: number): void {
-  localStorage.setItem(
-    "authToken",
-    JSON.stringify({
-      accessToken,
-      expiresAt: Date.now() + expiresIn * 1000,
-    } as TokenInfo)
-  );
-}
-
-export function getAccessToken(): string | null {
-  const token = getToken();
-  return token?.accessToken ?? null;
-}
-
-export function clearAuth(): void {
+// Limpieza migratoria: datos viejos de sesión en localStorage ya no se usan
+// (la cookie httpOnly del refresh token es la única persistencia)
+;(() => {
   localStorage.removeItem("authToken");
   localStorage.removeItem("userInfo");
   localStorage.removeItem("userRole");
+})();
+
+export function getToken(): TokenInfo | null {
+  const { accessToken, expiresAt } = useAuthStore.getState();
+  if (!accessToken) return null;
+  return { accessToken, expiresAt };
+}
+
+export function setToken(accessToken: string, expiresIn: number): void {
+  useAuthStore.getState().setSession(accessToken, expiresIn);
+}
+
+export function getAccessToken(): string | null {
+  return useAuthStore.getState().accessToken;
+}
+
+export function clearAuth(): void {
+  useAuthStore.getState().logout();
 }
 
 export function setUserInfo(user: UserInfo): void {
-  localStorage.setItem("userInfo", JSON.stringify(user));
+  useAuthStore.getState().setUser(user);
 }
 
 export function getUserInfo(): UserInfo | null {
-  const data = localStorage.getItem("userInfo");
-  if (!data) return null;
-  try {
-    return JSON.parse(data) as UserInfo;
-  } catch {
-    return null;
-  }
+  return useAuthStore.getState().user;
 }
 
 export function getUserRoles(): string[] {
-  const user = getUserInfo();
+  const user = useAuthStore.getState().user;
   return user?.roles ?? [];
+}
+
+/**
+ * Intenta renovar la sesión al cargar la página usando la cookie httpOnly (refresh token).
+ * Si funciona → setea accessToken en el store y retorna true.
+ * Si falla → no hay sesión activa, retorna false.
+ */
+export async function refreshSession(): Promise<boolean> {
+  try {
+    const { data } = await axios.post<RefreshResponse>(
+      `${BASE_URL}/auth/refresh`,
+      {},
+      { withCredentials: true }
+    );
+    useAuthStore.getState().setSession(data.access_token, data.expires_in);
+    return true;
+  } catch (err) {
+    console.error('[auth] refresh failed:', err);
+    return false;
+  }
 }
 
 // ── Request Interceptor (adds Bearer token) ──
@@ -122,8 +133,7 @@ apiClient.interceptors.response.use(
 
     // Don't try to refresh if the failing request IS the refresh endpoint
     if (originalRequest.url?.includes("/auth/refresh")) {
-      clearAuth();
-      window.dispatchEvent(new CustomEvent("session:expired"));
+      useAuthStore.getState().logout();
       return Promise.reject(error);
     }
 
@@ -160,8 +170,7 @@ apiClient.interceptors.response.use(
       return apiClient(originalRequest);
     } catch (refreshError) {
       processQueue(refreshError, null);
-      clearAuth();
-      window.dispatchEvent(new CustomEvent("session:expired"));
+      useAuthStore.getState().logout();
       return Promise.reject(refreshError);
     } finally {
       isRefreshing = false;

@@ -3,6 +3,7 @@ import { AxiosError } from "axios";
 import type { Ingrediente, IngredienteCreate } from "../api/ingredientes";
 import { ingredientesApi } from "../api/ingredientes";
 import { exportToExcel } from "../utils/exportExcel";
+import { useAppForm, required } from "../hooks/useAppForm";
 
 const PAGE_SIZE = 10;
 
@@ -14,7 +15,6 @@ interface State {
   filter: string;
   editingId: number | null;
   showForm: boolean;
-  form: IngredienteCreate;
   inlineStockEdit: { id: number; value: string } | null;
   inlinePrecioEdit: { id: number; value: string } | null;
 }
@@ -28,15 +28,12 @@ type Action =
   | { type: "START_EDIT"; payload: Ingrediente }
   | { type: "START_CREATE" }
   | { type: "CLOSE_FORM" }
-  | { type: "UPDATE_FORM"; payload: Partial<IngredienteCreate> }
   | { type: "START_INLINE_STOCK"; payload: { id: number; currentValue: number } }
   | { type: "SET_INLINE_STOCK_VALUE"; payload: string }
   | { type: "CANCEL_INLINE_STOCK" }
   | { type: "START_INLINE_PRECIO"; payload: { id: number; currentValue: number } }
   | { type: "SET_INLINE_PRECIO_VALUE"; payload: string }
   | { type: "CANCEL_INLINE_PRECIO" };
-
-const emptyForm: IngredienteCreate = { nombre: "", es_alergeno: true, precio_actual: 0, stock_actual: 0 };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -51,23 +48,11 @@ function reducer(state: State, action: Action): State {
     case "SET_FILTER":
       return { ...state, filter: action.payload, page: 0 };
     case "START_EDIT":
-      return {
-        ...state,
-        editingId: action.payload.id,
-        showForm: true,
-        form: {
-          nombre: action.payload.nombre,
-          es_alergeno: action.payload.es_alergeno,
-          precio_actual: action.payload.precio_actual,
-          stock_actual: action.payload.stock_actual,
-        },
-      };
+      return { ...state, editingId: action.payload.id, showForm: true };
     case "START_CREATE":
-      return { ...state, editingId: null, showForm: true, form: emptyForm };
+      return { ...state, editingId: null, showForm: true };
     case "CLOSE_FORM":
-      return { ...state, showForm: false, editingId: null, form: emptyForm, inlineStockEdit: null, inlinePrecioEdit: null };
-    case "UPDATE_FORM":
-      return { ...state, form: { ...state.form, ...action.payload } };
+      return { ...state, showForm: false, editingId: null, inlineStockEdit: null, inlinePrecioEdit: null };
     case "START_INLINE_STOCK":
       return { ...state, inlineStockEdit: { id: action.payload.id, value: String(action.payload.currentValue) }, inlinePrecioEdit: null };
     case "SET_INLINE_STOCK_VALUE":
@@ -93,7 +78,6 @@ const init: State = {
   filter: "",
   editingId: null,
   showForm: false,
-  form: emptyForm,
   inlineStockEdit: null,
   inlinePrecioEdit: null,
 };
@@ -113,30 +97,53 @@ export default function IngredientesCRUD() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      if (state.editingId) {
-        await ingredientesApi.update(state.editingId, state.form);
-      } else {
-        await ingredientesApi.create(state.form);
+  // ── TanStack Form ──
+
+  const form = useAppForm<IngredienteCreate>({
+    defaultValues: { nombre: "", es_alergeno: true, precio_actual: 0, stock_actual: 0 },
+    onSubmit: async ({ value }) => {
+      try {
+        if (state.editingId) {
+          await ingredientesApi.update(state.editingId, value);
+        } else {
+          await ingredientesApi.create(value);
+        }
+        dispatch({ type: "CLOSE_FORM" });
+        fetchData();
+      } catch (err) {
+        const msg = err instanceof AxiosError && err.response?.data
+          ? (err.response.data as { detail?: string }).detail ?? (err as Error).message
+          : (err as Error).message;
+        dispatch({ type: "SET_ERROR", payload: msg });
       }
-      dispatch({ type: "CLOSE_FORM" });
-      fetchData();
-    } catch (err) {
-      const msg = err instanceof AxiosError && err.response?.data
-        ? (err.response.data as { detail?: string }).detail ?? (err as Error).message
-        : (err as Error).message;
-      dispatch({ type: "SET_ERROR", payload: msg });
-    }
+    },
+  });
+
+  // ── Action wrappers that combine TanStack Form + reducer ──
+
+  const handleStartCreate = () => {
+    form.reset();
+    dispatch({ type: "START_CREATE" });
   };
+
+  const handleStartEdit = (ing: Ingrediente) => {
+    form.setFieldValue("nombre", ing.nombre);
+    form.setFieldValue("es_alergeno", ing.es_alergeno);
+    form.setFieldValue("precio_actual", ing.precio_actual);
+    form.setFieldValue("stock_actual", ing.stock_actual);
+    dispatch({ type: "START_EDIT", payload: ing });
+  };
+
+  const handleCloseForm = () => {
+    form.reset();
+    dispatch({ type: "CLOSE_FORM" });
+  };
+
+  // ── Other handlers (unchanged) ──
 
   const handleExport = async () => {
     try {
-      // Fetch ALL ingredients (no pagination) for export
       const allData = await ingredientesApi.getAll(0, 10000);
-
-      // Apply current filter
       const exportData = allData
         .filter((i) =>
           i.nombre.toLowerCase().includes(state.filter.toLowerCase())
@@ -210,39 +217,66 @@ export default function IngredientesCRUD() {
         <input type="text" placeholder="Filtrar por nombre..." value={state.filter}
           onChange={(e) => dispatch({ type: "SET_FILTER", payload: e.target.value })}
           className="border px-3 py-1 rounded" />
-        <button onClick={() => dispatch({ type: "START_CREATE" })}
+        <button onClick={handleStartCreate}
           className="bg-green-600 text-white px-4 py-1 rounded cursor-pointer">+ Nuevo</button>
         <button onClick={handleExport}
           className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer">Exportar Excel</button>
       </div>
       {state.showForm && (
-        <form onSubmit={handleSubmit} className="border p-4 mb-4 rounded bg-gray-50 flex gap-4 items-end flex-wrap">
+        <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void form.handleSubmit(); }} className="border p-4 mb-4 rounded bg-gray-50 flex gap-4 items-end flex-wrap">
           <div>
-            <label className="block text-sm font-medium">Nombre</label>
-            <input value={state.form.nombre}
-              onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { nombre: e.target.value } })}
-              className="border px-2 py-1 rounded" required />
+            <form.Field name="nombre" validators={{ onChange: required() }}>
+              {(field) => (
+                <>
+                  <label className="block text-sm font-medium">Nombre</label>
+                  <input value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                    className="border px-2 py-1 rounded" required />
+                </>
+              )}
+            </form.Field>
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium">¿Es alérgeno?</label>
-            <input type="checkbox" checked={state.form.es_alergeno ?? true}
-              onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { es_alergeno: e.target.checked } })} />
+            <form.Field name="es_alergeno">
+              {(field) => (
+                <>
+                  <label className="text-sm font-medium">¿Es alérgeno?</label>
+                  <input type="checkbox" checked={field.state.value ?? true}
+                    onChange={(e) => field.handleChange(e.target.checked)} />
+                </>
+              )}
+            </form.Field>
           </div>
           <div>
-            <label className="block text-sm font-medium">Precio</label>
-            <input type="number" step="0.01" min="0" value={state.form.precio_actual ?? 0}
-              onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { precio_actual: parseFloat(e.target.value) || 0 } })}
-              className="border px-2 py-1 rounded w-28" />
+            <form.Field name="precio_actual" validators={{ onChange: ({ value }) => value != null && value < 0 ? 'Debe ser mayor o igual a 0' : undefined }}>
+              {(field) => (
+                <>
+                  <label className="block text-sm font-medium">Precio</label>
+                  <input type="number" step="0.01" min="0" value={field.state.value}
+                    onChange={(e) => field.handleChange(parseFloat(e.target.value) || 0)}
+                    onBlur={field.handleBlur}
+                    className="border px-2 py-1 rounded w-28" />
+                </>
+              )}
+            </form.Field>
           </div>
           <div>
-            <label className="block text-sm font-medium">Stock</label>
-            <input type="number" step="1" min="0" value={state.form.stock_actual ?? 0}
-              onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { stock_actual: parseInt(e.target.value) || 0 } })}
-              className="border px-2 py-1 rounded w-28" />
+            <form.Field name="stock_actual" validators={{ onChange: ({ value }) => value != null && value < 0 ? 'Debe ser mayor o igual a 0' : undefined }}>
+              {(field) => (
+                <>
+                  <label className="block text-sm font-medium">Stock</label>
+                  <input type="number" step="1" min="0" value={field.state.value}
+                    onChange={(e) => field.handleChange(parseInt(e.target.value) || 0)}
+                    onBlur={field.handleBlur}
+                    className="border px-2 py-1 rounded w-28" />
+                </>
+              )}
+            </form.Field>
           </div>
           <button type="submit" className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer">
             {state.editingId ? "Actualizar" : "Crear"}</button>
-          <button type="button" onClick={() => dispatch({ type: "CLOSE_FORM" })}
+          <button type="button" onClick={handleCloseForm}
             className="bg-gray-400 text-white px-4 py-1 rounded cursor-pointer">Cancelar</button>
         </form>
       )}
@@ -296,7 +330,7 @@ export default function IngredientesCRUD() {
                 </td>
                 <td className="border p-2">
                   <div className="flex gap-1 flex-wrap">
-                    <button onClick={() => dispatch({ type: "START_EDIT", payload: ing })}
+                    <button onClick={() => handleStartEdit(ing)}
                       className="bg-yellow-500 text-white px-2 py-1 rounded text-sm cursor-pointer">Editar</button>
                     <button onClick={() => dispatch({ type: "START_INLINE_STOCK", payload: { id: ing.id, currentValue: ing.stock_actual } })}
                       className="bg-teal-600 text-white px-2 py-1 rounded text-sm cursor-pointer">Stock</button>

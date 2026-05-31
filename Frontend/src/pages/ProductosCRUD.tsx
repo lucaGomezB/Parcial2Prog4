@@ -1,4 +1,5 @@
 import { useReducer, useEffect, useCallback, useState, useRef } from "react";
+import { useAppForm } from "../hooks/useAppForm";
 import type { Producto, ProductoCreate, ProductoIngredienteRead, ProductoCategoriaRead } from "../api/productos";
 import { productosApi } from "../api/productos";
 import type { Ingrediente } from "../api/ingredientes";
@@ -22,7 +23,6 @@ interface State {
   editingId: number | null;
   showForm: boolean;
   stockEditOnly: boolean;
-  form: ProductoCreate;
   selectedCategorias: {id: number, nombre: string, descripcion: string | null}[];
   selectedIngredientes: {id: number, nombre: string, es_alergeno: boolean}[];
   showCategoriaSelector: boolean;
@@ -39,16 +39,10 @@ type Action =
   | { type: "START_STOCK_EDIT"; payload: Producto }
   | { type: "START_CREATE" }
   | { type: "CLOSE_FORM" }
-  | { type: "UPDATE_FORM"; payload: Partial<ProductoCreate> }
   | { type: "SET_SELECTED_CATEGORIAS"; payload: {id: number, nombre: string, descripcion: string | null}[] }
   | { type: "SET_SELECTED_INGREDIENTES"; payload: {id: number, nombre: string, es_alergeno: boolean}[] }
   | { type: "SET_SHOW_CATEGORIA_SELECTOR"; payload: boolean }
   | { type: "SET_SHOW_INGREDIENTE_SELECTOR"; payload: boolean };
-
-const emptyForm: ProductoCreate = {
-  nombre: "", descripcion: "", precio_base: 0, tiempo_prep_min: 0,
-  disponible: true, stock_cantidad: 0, imagenes_url: [], categorias_ids: [], ingredientes: [],
-};
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -60,15 +54,6 @@ function reducer(state: State, action: Action): State {
     case "START_EDIT":
       return {
         ...state, editingId: action.payload.id, showForm: true, stockEditOnly: false,
-        form: {
-          nombre: action.payload.nombre,
-          descripcion: action.payload.descripcion ?? "",
-          precio_base: action.payload.precio_base,
-          stock_cantidad: action.payload.stock_cantidad,
-          tiempo_prep_min: action.payload.tiempo_prep_min,
-          disponible: action.payload.disponible,
-          imagenes_url: action.payload.imagenes_url,
-        },
         selectedCategorias: [],
         selectedIngredientes: [],
         showCategoriaSelector: false,
@@ -77,25 +62,15 @@ function reducer(state: State, action: Action): State {
     case "START_STOCK_EDIT":
       return {
         ...state, editingId: action.payload.id, showForm: true, stockEditOnly: true,
-        form: {
-          nombre: action.payload.nombre,
-          descripcion: action.payload.descripcion ?? "",
-          precio_base: action.payload.precio_base,
-          stock_cantidad: action.payload.stock_cantidad,
-          tiempo_prep_min: action.payload.tiempo_prep_min,
-          disponible: action.payload.disponible,
-          imagenes_url: action.payload.imagenes_url,
-        },
         selectedCategorias: [],
         selectedIngredientes: [],
         showCategoriaSelector: false,
         showIngredienteSelector: false,
       };
-    case "START_CREATE": return { ...state, editingId: null, showForm: true, stockEditOnly: false, form: emptyForm, selectedCategorias: [], selectedIngredientes: [], showCategoriaSelector: false, showIngredienteSelector: false };
-    case "CLOSE_FORM": return { ...state, showForm: false, editingId: null, stockEditOnly: false, form: emptyForm, selectedCategorias: [], selectedIngredientes: [], showCategoriaSelector: false, showIngredienteSelector: false };
-    case "UPDATE_FORM": return { ...state, form: { ...state.form, ...action.payload } };
-    case "SET_SELECTED_CATEGORIAS": return { ...state, selectedCategorias: action.payload, form: { ...state.form, categorias_ids: action.payload.map(c => c.id) } };
-    case "SET_SELECTED_INGREDIENTES": return { ...state, selectedIngredientes: action.payload, form: { ...state.form, ingredientes: action.payload.map(i => ({ ingrediente_id: i.id, es_removible: true, es_principal: false, orden: 0 })) } };
+    case "START_CREATE": return { ...state, editingId: null, showForm: true, stockEditOnly: false, selectedCategorias: [], selectedIngredientes: [], showCategoriaSelector: false, showIngredienteSelector: false };
+    case "CLOSE_FORM": return { ...state, showForm: false, editingId: null, stockEditOnly: false, selectedCategorias: [], selectedIngredientes: [], showCategoriaSelector: false, showIngredienteSelector: false };
+    case "SET_SELECTED_CATEGORIAS": return { ...state, selectedCategorias: action.payload };
+    case "SET_SELECTED_INGREDIENTES": return { ...state, selectedIngredientes: action.payload };
     case "SET_SHOW_CATEGORIA_SELECTOR": return { ...state, showCategoriaSelector: action.payload };
     case "SET_SHOW_INGREDIENTE_SELECTOR": return { ...state, showIngredienteSelector: action.payload };
     default: return state;
@@ -104,7 +79,7 @@ function reducer(state: State, action: Action): State {
 
 const init: State = {
   items: [], loading: false, error: null, page: 0, filter: "",
-  editingId: null, showForm: false, stockEditOnly: false, form: emptyForm,
+  editingId: null, showForm: false, stockEditOnly: false,
   selectedCategorias: [], selectedIngredientes: [], showCategoriaSelector: false, showIngredienteSelector: false,
 };
 
@@ -644,39 +619,111 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      if (state.editingId) {
-        if (state.stockEditOnly) {
-          await productosApi.update(state.editingId, {
-            stock_cantidad: state.form.stock_cantidad,
-            disponible: state.form.disponible,
-          });
-        } else {
-          await productosApi.update(state.editingId, {
-            nombre: state.form.nombre,
-            descripcion: state.form.descripcion,
-            precio_base: state.form.precio_base,
-            stock_cantidad: state.form.stock_cantidad,
-            disponible: state.form.disponible,
-          });
-        }
-      } else {
-        await productosApi.create(state.form);
-      }
-      dispatch({ type: "CLOSE_FORM" });
-      fetchData();
-    } catch (err) {
-      let msg = (err as Error).message;
-      if (err instanceof AxiosError && err.response?.data) {
-        const body = err.response.data as Record<string, unknown>;
-        if (body.detail) {
-          msg = JSON.stringify(body.detail, null, 2);
-        }
-      }
-      dispatch({ type: "SET_ERROR", payload: msg });
+  // ── Sincronizar precio calculado desde ingredientes seleccionados (solo creación) ──
+  const precioCalculadoRef = useRef(0);
+  useEffect(() => {
+    if (!state.editingId && state.selectedIngredientes.length > 0) {
+      const total = state.selectedIngredientes.reduce((sum, ing) => {
+        const fullIng = allIngs.find(a => a.id === ing.id);
+        return sum + Number(fullIng?.precio_actual ?? 0);
+      }, 0);
+      precioCalculadoRef.current = total;
+      form.setFieldValue('precio_base', total);
     }
+  }, [state.selectedIngredientes, state.editingId, allIngs]);
+
+  // ── TanStack Form ──
+  const form = useAppForm<ProductoCreate>({
+    defaultValues: {
+      nombre: "",
+      descripcion: "",
+      precio_base: 0,
+      stock_cantidad: 0,
+      tiempo_prep_min: 0,
+      disponible: true,
+      imagenes_url: [],
+      categorias_ids: [],
+      ingredientes: [],
+    },
+    onSubmit: async ({ value }) => {
+      try {
+        if (state.editingId) {
+          if (state.stockEditOnly) {
+            await productosApi.update(state.editingId, {
+              stock_cantidad: value.stock_cantidad,
+              disponible: value.disponible,
+            });
+          } else {
+            await productosApi.update(state.editingId, {
+              nombre: value.nombre,
+              descripcion: value.descripcion,
+              precio_base: value.precio_base,
+              stock_cantidad: value.stock_cantidad,
+              disponible: value.disponible,
+            });
+          }
+        } else {
+          await productosApi.create({
+            ...value,
+            categorias_ids: state.selectedCategorias.map(c => c.id),
+            ingredientes: state.selectedIngredientes.map(i => ({
+              ingrediente_id: i.id,
+              es_removible: true,
+              es_principal: false,
+              orden: 0,
+            })),
+          });
+        }
+        dispatch({ type: "CLOSE_FORM" });
+        fetchData();
+      } catch (err) {
+        let msg = (err as Error).message;
+        if (err instanceof AxiosError && err.response?.data) {
+          const body = err.response.data as Record<string, unknown>;
+          if (body.detail) {
+            msg = JSON.stringify(body.detail, null, 2);
+          }
+        }
+        dispatch({ type: "SET_ERROR", payload: msg });
+      }
+    },
+  });
+
+  // ── Action wrappers that combine TanStack Form + reducer ──
+  const handleStartCreate = () => {
+    form.reset();
+    dispatch({ type: "START_CREATE" });
+  };
+
+  const handleStartEdit = (prod: Producto) => {
+    form.reset({
+      nombre: prod.nombre,
+      descripcion: prod.descripcion ?? "",
+      precio_base: prod.precio_base,
+      stock_cantidad: prod.stock_cantidad,
+      tiempo_prep_min: prod.tiempo_prep_min,
+      disponible: prod.disponible,
+      imagenes_url: prod.imagenes_url,
+    });
+    dispatch({ type: "START_EDIT", payload: prod });
+  };
+
+  const handleStartStockEdit = (prod: Producto) => {
+    form.reset({
+      nombre: prod.nombre,
+      descripcion: prod.descripcion ?? "",
+      precio_base: prod.precio_base,
+      stock_cantidad: prod.stock_cantidad,
+      tiempo_prep_min: prod.tiempo_prep_min,
+      disponible: prod.disponible,
+      imagenes_url: prod.imagenes_url,
+    });
+    dispatch({ type: "START_STOCK_EDIT", payload: prod });
+  };
+
+  const handleCloseForm = () => {
+    form.reset();
+    dispatch({ type: "CLOSE_FORM" });
   };
 
   const handleDelete = async (id: number) => {
@@ -690,6 +737,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
   };
 
   const filtered = state.items.filter((p) =>
+    (role !== 'client' || p.disponible === true) &&
     p.nombre.toLowerCase().includes(state.filter.toLowerCase())
   );
 
@@ -700,7 +748,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
 
       <div className="flex gap-2 mb-4 items-center">
         {!hideCreate && (
-          <button onClick={() => dispatch({ type: "START_CREATE" })}
+          <button onClick={handleStartCreate}
             className="bg-green-600 text-white px-4 py-1 rounded cursor-pointer">Crear Producto</button>
         )}
         <input type="text" placeholder="Filtrar por nombre..." value={state.filter}
@@ -715,73 +763,119 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
       </div>
 
       {state.showForm && (!hideCreate || state.stockEditOnly) && (
-        <form onSubmit={handleSubmit} className="border p-4 mb-4 rounded bg-gray-50">
+        <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void form.handleSubmit(); }} className="border p-4 mb-4 rounded bg-gray-50">
           {state.stockEditOnly ? (
             /* ── STOCK: simple stock_cantidad ── */
             <div className="grid grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium">Stock</label>
-                <input type="number" min="0" value={state.form.stock_cantidad ?? 0}
-                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { stock_cantidad: Number(e.target.value) } })}
-                  className="border px-2 py-1 rounded w-full" />
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">Disponible</label>
-                <input type="checkbox" checked={state.form.disponible ?? true}
-                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { disponible: e.target.checked } })} />
-              </div>
+              <form.Field name="stock_cantidad">
+                {(field) => (
+                  <div>
+                    <label className="block text-sm font-medium">Stock</label>
+                    <input type="number" min="0"
+                      value={field.state.value ?? 0}
+                      onChange={(e) => field.handleChange(Number(e.target.value))}
+                      onBlur={field.handleBlur}
+                      className="border px-2 py-1 rounded w-full" />
+                  </div>
+                )}
+              </form.Field>
+              <form.Field name="disponible">
+                {(field) => (
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm font-medium">Disponible</label>
+                    <input type="checkbox" checked={field.state.value ?? true}
+                      onChange={(e) => field.handleChange(e.target.checked)} />
+                  </div>
+                )}
+              </form.Field>
             </div>
           ) : (
             /* ── ADMIN/PEDIDOS: formulario completo ── */
             <div className="grid grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium">Nombre</label>
-                <input value={state.form.nombre}
-                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { nombre: e.target.value } })}
-                  className="border px-2 py-1 rounded w-full" required />
-              </div>
-              <div>
-                <label className="block text-sm font-medium">Descripción</label>
-                <input value={state.form.descripcion ?? ""}
-                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { descripcion: e.target.value } })}
-                  className="border px-2 py-1 rounded w-full" />
-              </div>
+              <form.Field name="nombre">
+                {(field) => (
+                  <div>
+                    <label className="block text-sm font-medium">Nombre</label>
+                    <input value={field.state.value}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      onBlur={field.handleBlur}
+                      className="border px-2 py-1 rounded w-full" required />
+                  </div>
+                )}
+              </form.Field>
+              <form.Field name="descripcion">
+                {(field) => (
+                  <div>
+                    <label className="block text-sm font-medium">Descripción</label>
+                    <input value={field.state.value ?? ""}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      onBlur={field.handleBlur}
+                      className="border px-2 py-1 rounded w-full" />
+                  </div>
+                )}
+              </form.Field>
               <div>
                 <label className="block text-sm font-medium">Precio Base</label>
                 {(() => {
                   const editingProduct = state.editingId ? state.items.find(p => p.id === state.editingId) : null;
                   const hasIngredients = editingProduct?.tiene_ingredientes ?? false;
-                  const precioDisabled = !!state.editingId && hasIngredients;
+                  // Deshabilitado: siempre en creación (se calcula desde ingredientes) o si editando y tiene ingredientes
+                  const precioDisabled = !state.editingId || (!!state.editingId && hasIngredients);
                   return (
-                    <>
-                      <input type="number" step="0.01" value={state.form.precio_base ?? 0}
-                        disabled={precioDisabled}
-                        onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { precio_base: Number(e.target.value) } })}
-                        className={`border px-2 py-1 rounded w-full ${precioDisabled ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : ''}`} />
-                      {precioDisabled && (
-                        <p className="text-xs text-gray-500 mt-1 italic">Calculado desde ingredientes</p>
+                    <form.Field name="precio_base">
+                      {(field) => (
+                        <>
+                          <input type="number" step="0.01" value={field.state.value ?? 0}
+                            disabled={precioDisabled}
+                            onChange={(e) => field.handleChange(Number(e.target.value))}
+                            onBlur={field.handleBlur}
+                            className={`border px-2 py-1 rounded w-full ${precioDisabled ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : ''}`} />
+                          {precioDisabled && (
+                            <p className="text-xs text-gray-500 mt-1 italic">
+                              {!state.editingId
+                                ? (state.selectedIngredientes.length > 0
+                                    ? `Calculado desde ${state.selectedIngredientes.length} ingrediente(s)`
+                                    : 'Se calculará al seleccionar ingredientes')
+                                : 'Calculado desde ingredientes'}
+                            </p>
+                          )}
+                        </>
                       )}
-                    </>
+                    </form.Field>
                   );
                 })()}
               </div>
-              <div>
-                <label className="block text-sm font-medium">Stock</label>
-                <input type="number" min="0" value={state.form.stock_cantidad ?? 0}
-                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { stock_cantidad: Number(e.target.value) } })}
-                  className="border px-2 py-1 rounded w-full" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium">Tiempo Prep. (min)</label>
-                <input type="number" value={state.form.tiempo_prep_min ?? 0}
-                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { tiempo_prep_min: Number(e.target.value) } })}
-                  className="border px-2 py-1 rounded w-full" />
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">Disponible</label>
-                <input type="checkbox" checked={state.form.disponible ?? true}
-                  onChange={(e) => dispatch({ type: "UPDATE_FORM", payload: { disponible: e.target.checked } })} />
-              </div>
+              <form.Field name="stock_cantidad">
+                {(field) => (
+                  <div>
+                    <label className="block text-sm font-medium">Stock</label>
+                    <input type="number" min="0" value={field.state.value ?? 0}
+                      onChange={(e) => field.handleChange(Number(e.target.value))}
+                      onBlur={field.handleBlur}
+                      className="border px-2 py-1 rounded w-full" />
+                  </div>
+                )}
+              </form.Field>
+              <form.Field name="tiempo_prep_min">
+                {(field) => (
+                  <div>
+                    <label className="block text-sm font-medium">Tiempo Prep. (min)</label>
+                    <input type="number" value={field.state.value ?? 0}
+                      onChange={(e) => field.handleChange(Number(e.target.value))}
+                      onBlur={field.handleBlur}
+                      className="border px-2 py-1 rounded w-full" />
+                  </div>
+                )}
+              </form.Field>
+              <form.Field name="disponible">
+                {(field) => (
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm font-medium">Disponible</label>
+                    <input type="checkbox" checked={field.state.value ?? true}
+                      onChange={(e) => field.handleChange(e.target.checked)} />
+                  </div>
+                )}
+              </form.Field>
             </div>
           )}
 
@@ -845,9 +939,10 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
           )}
 
           <div className="flex gap-2 mt-4">
-            <button type="submit" className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer">
-              {state.stockEditOnly ? "Actualizar Stock" : (state.editingId ? "Actualizar" : "Crear")}</button>
-            <button type="button" onClick={() => dispatch({ type: "CLOSE_FORM" })}
+            <button type="submit" disabled={form.state.isSubmitting}
+              className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer disabled:opacity-50">
+              {form.state.isSubmitting ? "Guardando..." : (state.stockEditOnly ? "Actualizar Stock" : (state.editingId ? "Actualizar" : "Crear"))}</button>
+            <button type="button" onClick={handleCloseForm}
               className="bg-gray-400 text-white px-4 py-1 rounded cursor-pointer">Cancelar</button>
           </div>
         </form>
@@ -912,10 +1007,10 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
                   <td className="border p-2">
                     <div className="flex gap-1 flex-wrap">
                       {!isStockMode && (
-                        <button onClick={() => dispatch({ type: "START_EDIT", payload: prod })}
+                        <button onClick={() => handleStartEdit(prod)}
                           className="bg-yellow-500 text-white px-2 py-1 rounded text-sm cursor-pointer hover:bg-yellow-600">Editar</button>
                       )}
-                      <button onClick={() => dispatch({ type: "START_STOCK_EDIT", payload: prod })}
+                      <button onClick={() => handleStartStockEdit(prod)}
                         className="bg-amber-700 text-white px-2 py-1 rounded text-sm cursor-pointer hover:bg-amber-800">Gestionar Stock</button>
                       {!isStockMode && !hideDelete && (
                         <button onClick={() => handleDelete(prod.id)}
