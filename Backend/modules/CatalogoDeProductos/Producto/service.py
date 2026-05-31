@@ -99,33 +99,57 @@ class ProductoService:
 
     @staticmethod
     def get_all(session: Session, skip: int = 0, limit: int = 100):
-        with CatalogoDeProductosUnitOfWork(session) as uow:
-            productos = uow.productos.get_all(skip=skip, limit=limit)
+        # Read-only: NO usar UoW — el commit() expiraría los objetos
+        # y FastAPI no podría serializarlos.
+        from sqlmodel import select, col
 
-            if not productos:
-                return productos
+        stmt = (
+            select(Producto)
+            .where(col(Producto.deleted_at).is_(None))
+            .offset(skip).limit(limit)
+            .order_by(Producto.id.desc())
+        )
+        productos = session.exec(stmt).all()
 
-            # Batch check which products have ingredient associations
-            product_ids = [p.id for p in productos]
-            stmt = select(ProductoIngrediente.producto_id).where(
-                ProductoIngrediente.producto_id.in_(product_ids)
-            ).distinct()
-            rows = session.exec(stmt).all()
-            ids_with_ingredients = set(rows)
+        if not productos:
+            return productos
 
-            # Build ProductoRead with tiene_ingredientes populated
-            return [
+        # Batch check which products have ingredient associations
+        product_ids = [p.id for p in productos]
+        stmt = select(ProductoIngrediente.producto_id).where(
+            ProductoIngrediente.producto_id.in_(product_ids)
+        ).distinct()
+        rows = session.exec(stmt).all()
+        ids_with_ingredients = set(rows)
+
+        # Build ProductoRead with tiene_ingredientes populated
+        # Normalize NULL JSON fields before validation (DB may have NULL)
+        result = []
+        for p in productos:
+            if p.imagenes_url is None:
+                p.imagenes_url = []
+            # model_validate NO incluye tiene_ingredientes (no existe en Producto),
+            # pero model_dump() sí lo incluye (con valor default False).
+            # Lo excluimos para poder setearlo sin duplicar argumento.
+            base = ProductoRead.model_validate(p).model_dump(exclude={"tiene_ingredientes"})
+            result.append(
                 ProductoRead(
-                    **ProductoRead.model_validate(p).model_dump(),
+                    **base,
                     tiene_ingredientes=p.id in ids_with_ingredients,
                 )
-                for p in productos
-            ]
+            )
+        return result
 
     @staticmethod
     def get_by_id(session: Session, producto_id: int):
-        with CatalogoDeProductosUnitOfWork(session) as uow:
-            return uow.productos.get_by_id(producto_id)
+        from sqlmodel import select, col
+
+        stmt = (
+            select(Producto)
+            .where(Producto.id == producto_id)
+            .where(col(Producto.deleted_at).is_(None))
+        )
+        return session.exec(stmt).first()
 
     @staticmethod
     def update(session: Session, producto_id: int, data: ProductoUpdate):

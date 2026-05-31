@@ -145,7 +145,7 @@ export default function IngredientesCRUD() {
           id,
           nombre,
           es_alergeno: es_alergeno ? "Sí" : "No",
-          precio_actual: `$${precio_actual.toFixed(2)}`,
+          precio_actual: `$${Number(precio_actual).toFixed(2)}`,
           stock_actual,
         }));
 
@@ -275,7 +275,7 @@ export default function IngredientesCRUD() {
                         className="bg-gray-400 text-white px-2 py-0.5 rounded text-xs cursor-pointer">✕</button>
                     </div>
                   ) : (
-                    `$${ing.precio_actual.toFixed(2)}`
+                    `$${Number(ing.precio_actual).toFixed(2)}`
                   )}
                 </td>
                 <td className="border p-2">

@@ -1,11 +1,11 @@
 from decimal import Decimal
 
-from sqlmodel import Session
+from sqlmodel import Session, select, col
 from typing import List, Optional
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from .models import Ingrediente
-from .schemas import IngredienteCreate, IngredienteUpdate
+from .schemas import IngredienteCreate, IngredienteRead, IngredienteUpdate
 from models.base import get_utc_now
 from ..uow import CatalogoDeProductosUnitOfWork
 from ..Producto.service import ProductoService
@@ -27,14 +27,30 @@ class IngredienteService:
             return db_ingrediente
 
     @staticmethod
-    def get_all(session: Session, skip: int = 0, limit: int = 100) -> List[Ingrediente]:
-        with CatalogoDeProductosUnitOfWork(session) as uow:
-            return uow.ingredientes.get_all(skip=skip, limit=limit)
+    def get_all(session: Session, skip: int = 0, limit: int = 100) -> List[IngredienteRead]:
+        # Read-only: NO usar UoW — el commit() expiraría los objetos.
+        # Devolvemos IngredienteRead directamente para evitar que
+        # FastAPI serialice objetos SQLAlchemy expirados.
+        stmt = (
+            select(Ingrediente)
+            .where(col(Ingrediente.deleted_at).is_(None))
+            .offset(skip).limit(limit)
+            .order_by(Ingrediente.id.desc())
+        )
+        rows = session.exec(stmt).all()
+        return [IngredienteRead.model_validate(r) for r in rows]
 
     @staticmethod
-    def get_by_id(session: Session, ingrediente_id: int) -> Optional[Ingrediente]:
-        with CatalogoDeProductosUnitOfWork(session) as uow:
-            return uow.ingredientes.get_by_id(ingrediente_id)
+    def get_by_id(session: Session, ingrediente_id: int) -> Optional[IngredienteRead]:
+        stmt = (
+            select(Ingrediente)
+            .where(Ingrediente.id == ingrediente_id)
+            .where(col(Ingrediente.deleted_at).is_(None))
+        )
+        row = session.exec(stmt).first()
+        if not row:
+            return None
+        return IngredienteRead.model_validate(row)
 
     @staticmethod
     def actualizar_precio(session: Session, ingrediente_id: int, precio: Decimal) -> Ingrediente:

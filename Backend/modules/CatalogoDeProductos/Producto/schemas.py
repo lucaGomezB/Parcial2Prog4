@@ -58,6 +58,14 @@ class ProductoRead(SQLModel):
     tiene_ingredientes: bool = False
     model_config = ConfigDict(from_attributes=True)
 
+    @field_validator("imagenes_url", mode="before")
+    @classmethod
+    def normalize_imagenes_url(cls, v):
+        """DB puede tener NULL en imagenes_url — convertirlo a []."""
+        if v is None:
+            return []
+        return v
+
 class ProductoIngredienteRead(SQLModel):
     """Schema para devolver un ingrediente asociado a un producto."""
     ingrediente_id: int

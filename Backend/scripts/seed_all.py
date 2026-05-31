@@ -50,6 +50,7 @@ from modules.VentasPagosTrazabilidad.Pago.models import Pago
 from app.db.seed import (
     seed_roles,
     seed_users,
+    seed_direcciones,
     seed_categorias,
     seed_ingredientes,
     seed_productos,
@@ -113,6 +114,7 @@ def main():
     with Session(engine) as session:
         seed_roles(session)
         seed_users(session)
+        seed_direcciones(session)
         seed_categorias(session)
         seed_ingredientes(session)
         seed_productos(session)

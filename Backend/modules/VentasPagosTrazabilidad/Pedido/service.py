@@ -327,7 +327,9 @@ class PedidoService:
                 usuario_id=usuario_id,
             )
 
-            uow.refresh(db_pedido)
+            # NOTA: NO hacer uow.refresh(db_pedido) aquí — el refresh
+            # antes del commit revierte el cambio de estado en memoria
+            # (el objeto ya tiene estado_codigo correcto).
             return (db_pedido, estado_anterior)
 
     @staticmethod
@@ -369,7 +371,7 @@ class PedidoService:
                 motivo="Cancelado por usuario" if not es_admin else None,
             )
 
-            uow.refresh(db_pedido)
+            # SIN refresh — mismo motivo que en avanzar_estado
             return db_pedido
 
     @staticmethod

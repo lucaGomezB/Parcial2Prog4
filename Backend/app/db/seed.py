@@ -5,7 +5,6 @@ Corre en el startup (lifespan de main.py) y también es invocable como script.
 Idempotente: si un registro ya existe, lo saltea.
 """
 import os
-import random
 from decimal import Decimal
 from dotenv import load_dotenv
 from sqlmodel import SQLModel, create_engine, Session, select
@@ -16,12 +15,16 @@ from modules.IdentidadYAcceso.Usuario.models import Usuario
 from modules.IdentidadYAcceso.usuario_rol import UsuarioRol
 from modules.IdentidadYAcceso.Usuario.service import get_password_hash
 
+# ── Direcciones ──
+from modules.IdentidadYAcceso.DireccionEntrega.models import DireccionEntrega
+
 # ── Catálogo ──
 from modules.CatalogoDeProductos.Categoria.models import Categoria
 from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
 from modules.CatalogoDeProductos.Producto.models import Producto
 from modules.CatalogoDeProductos.producto_categoria import ProductoCategoria
 from modules.CatalogoDeProductos.producto_ingrediente import ProductoIngrediente
+from modules.CatalogoDeProductos.Producto.service import ProductoService
 
 # ── Ventas ──
 from modules.VentasPagosTrazabilidad.EstadoPedido.models import EstadoPedido
@@ -47,6 +50,13 @@ USERS_SEED = [
     {"nombre": "Stock",   "apellido": "Sistema",  "email": "stock@email.com",   "password": "stock123",   "rol_codigo": "STOCK"},
     {"nombre": "Pedidos", "apellido": "Sistema",  "email": "pedidos@email.com", "password": "pedidos123", "rol_codigo": "PEDIDOS"},
     {"nombre": "Cliente", "apellido": "Estandar", "email": "client@email.com",  "password": "client123",  "rol_codigo": "CLIENT"},
+]
+
+DIRECCIONES_SEED = [
+    {"email": "admin@email.com",   "alias": "Principal", "linea1": "Av. Siempre Viva 123",      "ciudad": "Mendoza",   "es_principal": True},
+    {"email": "stock@email.com",   "alias": "Principal", "linea1": "Calle falsa 456",            "ciudad": "Mendoza",   "es_principal": True},
+    {"email": "pedidos@email.com", "alias": "Principal", "linea1": "Av. del Libertador 789",     "ciudad": "Godoy Cruz", "es_principal": True},
+    {"email": "client@email.com",  "alias": "Principal", "linea1": "Av. Festa 1233",             "ciudad": "Mendoza",   "es_principal": True},
 ]
 
 CATEGORIAS_SEED = [
@@ -104,7 +114,7 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Coca Cola 500ml",
         descripcion="Gaseosa sabor cola",
-        precio=Decimal("1200.00"), tiempo=1, disponible=True,
+        precio=Decimal("1200.00"), tiempo=1, disponible=True, stock_cantidad=200,
         categorias=[("Bebidas Frías", True)],
         ingredientes=[
             ("Agua", False, False, 1, Decimal("0.5")),
@@ -115,7 +125,7 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Café con Leche",
         descripcion="Café expreso con leche cremada",
-        precio=Decimal("1500.00"), tiempo=5, disponible=True,
+        precio=Decimal("1500.00"), tiempo=5, disponible=True, stock_cantidad=150,
         categorias=[("Bebidas Calientes", True)],
         ingredientes=[
             ("Café molido", False, True, 1, Decimal("0.05")),
@@ -125,7 +135,7 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Hamburguesa Clásica",
         descripcion="Medallón de res, cheddar, lechuga y tomate",
-        precio=Decimal("4500.00"), tiempo=12, disponible=True,
+        precio=Decimal("4500.00"), tiempo=12, disponible=True, stock_cantidad=100,
         categorias=[("Sandwichs Calientes", True)],
         ingredientes=[
             ("Pan de hamburguesa", False, False, 1, Decimal("1")),
@@ -138,7 +148,7 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Sandwich de Miga (Jamón y Queso)",
         descripcion="Triple de jamón cocido, queso y mayonesa",
-        precio=Decimal("2800.00"), tiempo=5, disponible=True,
+        precio=Decimal("2800.00"), tiempo=5, disponible=True, stock_cantidad=80,
         categorias=[("Sandwichs Fríos", True)],
         ingredientes=[
             ("Pan de miga", False, False, 1, Decimal("2")),
@@ -149,7 +159,7 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Papas Fritas Grandes",
         descripcion="Porción de papas fritas crocantes",
-        precio=Decimal("2200.00"), tiempo=8, disponible=True,
+        precio=Decimal("2200.00"), tiempo=8, disponible=True, stock_cantidad=120,
         categorias=[("Guarniciones", True)],
         ingredientes=[
             ("Papa", False, True, 1, Decimal("0.5")),
@@ -160,7 +170,7 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Flan con Dulce de Leche",
         descripcion="Flan casero con dulce de leche y crema",
-        precio=Decimal("2500.00"), tiempo=2, disponible=True,
+        precio=Decimal("2500.00"), tiempo=2, disponible=True, stock_cantidad=60,
         categorias=[("Postres", True)],
         ingredientes=[
             ("Huevo", False, True, 1, Decimal("2")),
@@ -172,7 +182,7 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Coca Cola",
         descripcion="Gaseosa sabor cola",
-        precio=Decimal("1200.00"), tiempo=1, disponible=True,
+        precio=Decimal("1200.00"), tiempo=1, disponible=True, stock_cantidad=200,
         categorias=[("Bebidas Frías", True)],
         ingredientes=[
             ("Agua", False, False, 1, Decimal("0.5")),
@@ -183,7 +193,7 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Pizza Muzzarella",
         descripcion="Pizza clásica con mozzarella y salsa",
-        precio=Decimal("3000.00"), tiempo=15, disponible=True,
+        precio=Decimal("3000.00"), tiempo=15, disponible=True, stock_cantidad=90,
         categorias=[("Pizzas", True)],
         ingredientes=[
             ("Harina de trigo", False, False, 1, Decimal("0.3")),
@@ -194,7 +204,7 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Tarta de Jamón y Queso",
         descripcion="Tarta rellena de jamón cocido y queso",
-        precio=Decimal("2500.00"), tiempo=12, disponible=True,
+        precio=Decimal("2500.00"), tiempo=12, disponible=True, stock_cantidad=70,
         categorias=[("Tartas", True)],
         ingredientes=[
             ("Harina de trigo", False, True, 1, Decimal("0.3")),
@@ -265,6 +275,37 @@ def seed_users(session: Session):
     session.commit()
 
 
+def seed_direcciones(session: Session):
+    """Crea direcciones de entrega para cada usuario.
+    Idempotente: si ya existe una dirección con la misma línea para el usuario, la saltea.
+    """
+    for dir_data in DIRECCIONES_SEED:
+        usuario = session.exec(
+            select(Usuario).where(Usuario.email == dir_data["email"])
+        ).first()
+        if not usuario:
+            continue
+
+        existing = session.exec(
+            select(DireccionEntrega).where(
+                DireccionEntrega.usuario_id == usuario.id,
+                DireccionEntrega.linea1 == dir_data["linea1"],
+            )
+        ).first()
+        if existing:
+            continue
+
+        direccion = DireccionEntrega(
+            usuario_id=usuario.id,
+            alias=dir_data["alias"],
+            linea1=dir_data["linea1"],
+            ciudad=dir_data["ciudad"],
+            es_principal=dir_data["es_principal"],
+        )
+        session.add(direccion)
+    session.commit()
+
+
 def seed_categorias(session: Session):
     """Crea categorías jerárquicas (dos pasadas: crear, luego asignar padres)."""
     created: dict[str, Categoria] = {}
@@ -311,20 +352,23 @@ def seed_ingredientes(session: Session):
 
 
 def seed_productos(session: Session):
-    """Crea productos con relaciones a categorías e ingredientes."""
+    """Crea productos con relaciones a categorías e ingredientes.
+    Idempotente: si el producto ya existe, lo saltea.
+    Luego recalcula precio_base desde los ingredientes usando ProductoService.
+    """
     for prod_data in PRODUCTOS_SEED:
         existing = _get_by_name(session, Producto, prod_data["nombre"])
         if existing:
             continue
 
-        stock = random.randint(0, 500)
-        disponible = prod_data["disponible"] and stock > 0
+        stock_cantidad = prod_data["stock_cantidad"]
+        disponible = prod_data["disponible"] and stock_cantidad > 0
 
         producto = Producto(
             nombre=prod_data["nombre"],
             descripcion=prod_data["descripcion"],
             precio_base=prod_data["precio"],
-            stock_cantidad=stock,
+            stock_cantidad=stock_cantidad,
             tiempo_prep_min=prod_data["tiempo"],
             disponible=disponible,
         )
@@ -353,6 +397,9 @@ def seed_productos(session: Session):
                     orden=orden,
                     cantidad=cantidad,
                 ))
+
+        # Recalcular precio_base desde los ingredientes
+        ProductoService._recalcular_precio_producto(session, producto.id)
 
     session.commit()
 
@@ -388,6 +435,7 @@ def run_seed():
     with Session(engine) as session:
         seed_roles(session)
         seed_users(session)
+        seed_direcciones(session)
         seed_categorias(session)
         seed_ingredientes(session)
         seed_productos(session)

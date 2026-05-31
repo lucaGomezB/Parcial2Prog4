@@ -1,5 +1,6 @@
 import logging
 import os
+from decimal import Decimal
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -68,7 +69,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Sistema de Pedidos API",
     lifespan=lifespan,
-    redirect_slashes=False
+    redirect_slashes=False,
+    json_encoders={Decimal: float},
 )
 
 # Rate limiting
