@@ -2,8 +2,7 @@
 Usuario (User) service module.
 
 Implements business logic for user management:
-- Password hashing with bcrypt (never stored in plain text).
-- User creation with optional role assignment.
+- User creation with optional role assignment (password hashing via core.security).
 - User listing with pagination and optional role filtering.
 - Single user retrieval with eager-loaded roles.
 - Partial update of user fields and/or role reassignment.
@@ -13,31 +12,17 @@ All operations use the IdentidadYAccesoUnitOfWork to ensure
 transactional consistency across related entities.
 """
 
-import bcrypt
 from typing import List, Optional
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
 
+from core.security import get_password_hash
+
 from .models import Usuario
 from .schemas import UsuarioCreate, UsuarioUpdateWithRoles
 from ..Rol.models import Rol
 from ..uow import IdentidadYAccesoUnitOfWork
-
-
-def get_password_hash(password: str) -> str:
-    """
-    Hash a plain-text password using bcrypt.
-
-    Uses a random salt with cost factor 12 (2^12 = 4096 iterations).
-    The salt is embedded in the output hash (60-char string), so
-    no separate salt storage is needed.
-
-    bcrypt format: $2b$12$[22-char-salt][31-char-hash]
-    """
-    password_bytes = password.encode('utf-8')
-    salt = bcrypt.gensalt(rounds=12)
-    return bcrypt.hashpw(password_bytes, salt).decode('utf-8')
 
 
 def crear_usuario(session: Session, datos: UsuarioCreate) -> Usuario:
@@ -70,7 +55,6 @@ def crear_usuario(session: Session, datos: UsuarioCreate) -> Usuario:
                 if rol:
                     nuevo_usuario.roles.append(rol)
 
-        uow.commit()
         uow.usuarios.refresh(nuevo_usuario)
         return _load_roles(session, nuevo_usuario)
 
@@ -156,7 +140,6 @@ def actualizar_usuario(
                 if rol:
                     usuario.roles.append(rol)
 
-        uow.commit()
         return _load_roles(session, usuario)
 
 
@@ -175,5 +158,4 @@ def eliminar_usuario(session: Session, usuario_id: int) -> bool:
         from models.base import get_utc_now
         usuario.deleted_at = get_utc_now()
         uow.usuarios.add(usuario)
-        uow.commit()
         return True

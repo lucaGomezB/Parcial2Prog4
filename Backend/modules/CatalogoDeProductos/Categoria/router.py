@@ -26,6 +26,7 @@ def get_tree(session: Session = Depends(get_session)):
     """GET /categorias/tree — Get the category tree (root categories with nested children). Public endpoint."""
     return CategoriaService.get_root_categories(session)
 
+# Lo usamos para debugging
 @router.get("/", response_model=list[CategoriaRead])
 def read_categorias(
     skip: int = Query(0, ge=0),

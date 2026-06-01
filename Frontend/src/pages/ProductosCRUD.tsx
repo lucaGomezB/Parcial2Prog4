@@ -259,6 +259,20 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
     setLoading(false);
   }, [productoId]);
 
+  /**
+   * Silent refresh — fetches updated data WITHOUT setting loading=true.
+   * Used by handleToggleAlergeno and handleCantidadChange to avoid
+   * flashing "Cargando..." during background updates.
+   */
+  const refresh = useCallback(async () => {
+    const [prodIngs, available] = await Promise.all([
+      productosApi.getIngredientes(productoId),
+      ingredientesApi.getAll(0, 1000),
+    ]);
+    setIngs(prodIngs);
+    setAllIngs(available);
+  }, [productoId]);
+
   useEffect(() => { load(); }, [load]);
 
   /** Adds a new ingredient relationship to the product. */
@@ -267,7 +281,7 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
     await productosApi.addIngrediente(productoId, addForm);
     setShowAdd(false);
     setAddForm({ ingrediente_id: 0, cantidad: 1, es_removible: true, es_principal: false, orden: 0 });
-    load();
+    refresh();
   };
 
   /**
@@ -287,7 +301,7 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
       await productosApi.updateIngredienteCantidad(productoId, ingredienteId, newCantidad);
     } catch {
       // Revert on error: reload from server
-      load();
+      refresh();
     } finally {
       setUpdatingCantidad(null);
     }
@@ -297,7 +311,7 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
   const handleRemove = async (ingredienteId: number) => {
     if (!confirm("Quitar este ingrediente?")) return;
     await productosApi.removeIngrediente(productoId, ingredienteId);
-    load();
+    refresh();
   };
 
   /** Toggles the es_alergeno flag on an ingredient directly from this popup. */
@@ -305,9 +319,10 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
     setToggling(ingredienteId);
     try {
       await ingredientesApi.update(ingredienteId, { es_alergeno: !currentValue });
-      await load(); // Reload to reflect changes
-    } catch {
-      // If the user lacks permissions, backend returns 403 — silently ignored
+      await refresh(); // Silently reload to reflect changes
+    } catch (err) {
+      console.error("[alergeno-toggle] Error al cambiar alergeno:", err);
+      alert("Error al cambiar alergeno. Revisa que tengas permisos de administrador o stock.");
     } finally {
       setToggling(null);
     }

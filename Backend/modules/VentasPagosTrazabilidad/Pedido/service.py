@@ -24,6 +24,7 @@ from .models import Pedido
 from .schemas import PedidoCreate, PedidoUpdate, ValidarStockInput, ValidarStockResponse, ValidarStockDetalleResponse
 from ..uow import VentasPagosTrazabilidadUnitOfWork
 from ..DetallePedido.models import DetallePedido
+from ..HistorialEstadoPedido.models import HistorialEstadoPedido
 from models.base import get_utc_now
 
 
@@ -59,6 +60,34 @@ TRANSICIONES_VALIDAS: dict[str, str] = {
 
 class PedidoService:
     """Business logic for the Order entity — FSM, stock validation, and CRUD."""
+
+    @staticmethod
+    def _registrar_transicion(uow, pedido, estado_anterior, estado_siguiente, usuario_id=None, motivo=None):
+        """Register an atomic state transition: INSERT audit trail + UPDATE order state.
+
+        This is the ONLY place where HistorialEstadoPedido rows are created and
+        where pedido.estado_codigo is modified. Both operations happen within
+        the same UoW transaction to ensure atomicity.
+
+        Args:
+            uow: Active VentasPagosTrazabilidadUnitOfWork instance.
+            pedido: The Pedido ORM instance to transition.
+            estado_anterior: Previous state (None = creation event).
+            estado_siguiente: Target state string (e.g. 'CONFIRMADO', 'CANCELADO').
+            usuario_id: Who triggered the transition (None = system/webhook).
+            motivo: Optional reason string (e.g. "Cancelado por usuario").
+        """
+        # Insert audit trail row (append-only — never modified after creation)
+        uow.add(HistorialEstadoPedido(
+            pedido_id=pedido.id,
+            estado_desde=estado_anterior,
+            estado_hacia=estado_siguiente,
+            usuario_id=usuario_id,
+            motivo=motivo,
+        ))
+        # Update the order's current state
+        pedido.estado_codigo = estado_siguiente
+        uow.pedidos.add(pedido)
 
     @staticmethod
     def _eager(stmt):
@@ -205,7 +234,8 @@ class PedidoService:
                     ))
 
             # Register the creation in history (estado_desde=NULL = creation)
-            uow.avanzar_estado(
+            PedidoService._registrar_transicion(
+                uow,
                 pedido=db_pedido,
                 estado_anterior=None,        # NULL = creation event
                 estado_siguiente="PENDIENTE",
@@ -410,9 +440,10 @@ class PedidoService:
                             ing.stock_actual = max(0, ing.stock_actual - cantidad_a_descontar)
                             session.add(ing)
 
-            # Atomic transition via UoW
+            # Atomic transition: audit trail + state update
             usuario_id = usuario.id if hasattr(usuario, 'id') else None
-            uow.avanzar_estado(
+            PedidoService._registrar_transicion(
+                uow,
                 pedido=db_pedido,
                 estado_anterior=estado_anterior,
                 estado_siguiente=estado_siguiente,
@@ -459,7 +490,8 @@ class PedidoService:
                     )
 
             usuario_id = usuario.id if hasattr(usuario, 'id') else None
-            uow.avanzar_estado(
+            PedidoService._registrar_transicion(
+                uow,
                 pedido=db_pedido,
                 estado_anterior=estado_actual,
                 estado_siguiente="CANCELADO",

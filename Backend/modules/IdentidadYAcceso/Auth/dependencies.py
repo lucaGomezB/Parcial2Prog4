@@ -10,17 +10,17 @@ Provides three key dependencies:
 3. require_roles: Dependency factory for Role-Based Access Control (RBAC).
    Returns a dependency that checks if the authenticated user has at least
    one of the specified role codes.
+
+JWT decoding is delegated to core.security.decode_token.
 """
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import jwt
 from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
 from core.database import get_session
+from core.security import decode_token, TokenData
 from modules.IdentidadYAcceso.Usuario.models import Usuario
-from .config import settings
-from .schemas import TokenData
 
 # HTTPBearer extracts the token from the "Authorization: Bearer <token>" header.
 # auto_error=False means we handle missing tokens manually (for optional auth).
@@ -50,15 +50,9 @@ def get_current_user(
     if not credentials:
         raise credentials_exception
 
-    try:
-        # Decode and verify the JWT signature using SECRET_KEY
-        payload = jwt.decode(
-            credentials.credentials,
-            settings.SECRET_KEY,
-            algorithms=[settings.ALGORITHM]
-        )
-        token_data = TokenData(**payload)
-    except jwt.InvalidTokenError:
+    # Decode and verify the JWT via core.security
+    token_data = decode_token(credentials.credentials)
+    if not token_data:
         raise credentials_exception
 
     # Load user with roles (eager loading to prevent lazy loading issues)
@@ -89,22 +83,16 @@ def get_current_user_optional(
     if not credentials:
         return None
 
-    try:
-        payload = jwt.decode(
-            credentials.credentials,
-            settings.SECRET_KEY,
-            algorithms=[settings.ALGORITHM]
-        )
-        token_data = TokenData(**payload)
-
-        stmt = (
-            select(Usuario)
-            .where(Usuario.id == token_data.user_id)
-            .options(selectinload(Usuario.roles))
-        )
-        return session.exec(stmt).first()
-    except jwt.InvalidTokenError:
+    token_data = decode_token(credentials.credentials)
+    if not token_data:
         return None
+
+    stmt = (
+        select(Usuario)
+        .where(Usuario.id == token_data.user_id)
+        .options(selectinload(Usuario.roles))
+    )
+    return session.exec(stmt).first()
 
 
 def require_roles(allowed_roles: list):

@@ -53,7 +53,6 @@ class DireccionEntregaService:
                 es_principal=data.es_principal,
             )
             uow.direcciones.add(db_direccion)
-            uow.commit()
             uow.direcciones.refresh(db_direccion)
             return db_direccion
 
@@ -112,7 +111,6 @@ class DireccionEntregaService:
                 setattr(direccion, key, value)
 
             uow.direcciones.add(direccion)
-            uow.commit()
             uow.direcciones.refresh(direccion)
             return direccion
 
@@ -146,7 +144,6 @@ class DireccionEntregaService:
             # Set the new principal
             direccion.es_principal = True
             uow.direcciones.add(direccion)
-            uow.commit()
             uow.direcciones.refresh(direccion)
             return direccion
 
@@ -169,5 +166,4 @@ class DireccionEntregaService:
 
             direccion.deleted_at = get_utc_now()
             uow.direcciones.add(direccion)
-            uow.commit()
             return True

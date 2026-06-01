@@ -22,7 +22,7 @@ from sqlmodel import SQLModel, create_engine, Session, select
 from modules.IdentidadYAcceso.Rol.models import Rol
 from modules.IdentidadYAcceso.Usuario.models import Usuario
 from modules.IdentidadYAcceso.usuario_rol import UsuarioRol
-from modules.IdentidadYAcceso.Usuario.service import get_password_hash
+from core.security import get_password_hash
 
 # ── Addresses ──
 from modules.IdentidadYAcceso.DireccionEntrega.models import DireccionEntrega

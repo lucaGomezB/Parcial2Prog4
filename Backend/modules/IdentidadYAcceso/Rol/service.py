@@ -16,7 +16,6 @@ def create_rol(session: Session, data: RolCreate):
     with IdentidadYAccesoUnitOfWork(session) as uow:
         db_rol = Rol.model_validate(data)
         uow.roles.add(db_rol)
-        uow.commit()
         uow.roles.refresh(db_rol)
         return db_rol
 

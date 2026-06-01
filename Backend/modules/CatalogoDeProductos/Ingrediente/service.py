@@ -30,7 +30,7 @@ class IngredienteService:
             db_ingrediente = Ingrediente.model_validate(data)
             uow.ingredientes.add(db_ingrediente)
             try:
-                uow.commit()
+                pass
             except IntegrityError:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -84,7 +84,6 @@ class IngredienteService:
                 )
             db_ingrediente.precio_actual = precio
             uow.ingredientes.add(db_ingrediente)
-            uow.commit()
             uow.ingredientes.refresh(db_ingrediente)
         # Trigger price recalculation for all products using this ingredient
         ProductoService.recalcular_precio_productos_afectados(session, ingrediente_id)
@@ -102,7 +101,6 @@ class IngredienteService:
                 )
             db_ingrediente.stock_actual = stock
             uow.ingredientes.add(db_ingrediente)
-            uow.commit()
             uow.ingredientes.refresh(db_ingrediente)
         return db_ingrediente
 
@@ -119,7 +117,6 @@ class IngredienteService:
                 setattr(db_ingrediente, key, value)
 
             uow.ingredientes.add(db_ingrediente)
-            uow.commit()
             uow.ingredientes.refresh(db_ingrediente)
         # Propagate price change to all products if precio_actual was updated
         if 'precio_actual' in data.model_dump(exclude_unset=True):
@@ -136,5 +133,4 @@ class IngredienteService:
 
             db_ingrediente.deleted_at = get_utc_now()
             uow.ingredientes.add(db_ingrediente)
-            uow.commit()
             return True

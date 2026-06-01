@@ -35,5 +35,4 @@ class DetallePedidoService:
                 personalizacion=data.personalizacion,
             )
             uow.detalles.add(db_detalle)
-            uow.commit()
             return db_detalle

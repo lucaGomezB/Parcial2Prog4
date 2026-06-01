@@ -40,21 +40,6 @@ class TokenResponse(BaseModel):
     expires_in: int
 
 
-class TokenData(BaseModel):
-    """
-    Payload structure embedded inside the JWT.
-
-    NOT a request/response schema — used internally for encoding
-    and decoding JWT payloads. Contains user identification data.
-
-    Attributes:
-        user_id: Database ID of the authenticated user.
-        email: Email of the authenticated user (for display purposes).
-    """
-    user_id: int
-    email: str
-
-
 class RefreshRequest(BaseModel):
     """
     Alternative request body for token refresh.

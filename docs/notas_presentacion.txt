@@ -60,4 +60,10 @@ router.py ->
 . samesite = "lax": Protección CSRF (Falsificación de solicitudes entre sitios)
 . path="api/auth/refresh" - Solo se envía al endpoint de resfresh.
 
-modules/IdentidadYAcceso/RefreshToken/models.py -> 
+modules/IdentidadYAcceso/RefreshToken/models.py -> Contiene el modelo de token que se usa. Si se elimina el usuario, sus tokens también.
+
+modules/IdentidadYAcceso/Usuario/service.py -> Hasheo de contraseñas
+
+core/rate_limit.py -> limiter = Limiter(key_func=get_remote_address), se aplica en /login
+
+main.py maneja CORS app.add_middleware(CORSMiddleware, allow_origins=["*"], ...), se permiten todos los origenes por ahora, con la posibilidad de agregar excepciones explicitas.

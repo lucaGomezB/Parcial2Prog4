@@ -64,7 +64,6 @@ class ProductoService:
             if data.ingredientes:
                 ProductoService._recalcular_precio_producto(session, db_producto.id)
 
-            uow.commit()
             uow.productos.refresh(db_producto)
             return db_producto
 
@@ -233,7 +232,6 @@ class ProductoService:
                 ProductoService._recalcular_precio_producto(session, producto_id)
 
             uow.productos.add(db_producto)
-            uow.commit()
             uow.productos.refresh(db_producto)
             return db_producto
 
@@ -250,7 +248,6 @@ class ProductoService:
 
             db_producto.deleted_at = get_utc_now()
             uow.productos.add(db_producto)
-            uow.commit()
             return db_producto
 
     @staticmethod
@@ -282,7 +279,6 @@ class ProductoService:
             )
             # Recalculate price after ingredient change
             ProductoService._recalcular_precio_producto(session, producto_id)
-            uow.commit()
             return uow.productos.get_ingredientes(producto_id)
 
     @staticmethod
@@ -293,7 +289,6 @@ class ProductoService:
             if result:
                 # Recalculate price after ingredient removal
                 ProductoService._recalcular_precio_producto(session, producto_id)
-                uow.commit()
             return result
 
     @staticmethod
@@ -317,7 +312,6 @@ class ProductoService:
             # Recalculate price after quantity change
             ProductoService._recalcular_precio_producto(session, producto_id)
 
-            uow.commit()
             return uow.productos.get_ingredientes(producto_id)
 
     @staticmethod
@@ -332,7 +326,6 @@ class ProductoService:
                 categoria_id=data.categoria_id,
                 es_principal=data.es_principal,
             )
-            uow.commit()
             return uow.productos.get_categorias(producto_id)
 
     @staticmethod
@@ -340,6 +333,4 @@ class ProductoService:
         """Remove a category association."""
         with CatalogoDeProductosUnitOfWork(session) as uow:
             result = uow.productos.delete_categoria_relacion(producto_id, categoria_id)
-            if result:
-                uow.commit()
             return result

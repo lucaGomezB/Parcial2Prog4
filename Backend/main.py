@@ -31,7 +31,6 @@ from modules.IdentidadYAcceso.Auth.router import router as auth_router
 from modules.IdentidadYAcceso.Usuario.router import router as usuario_router
 from modules.IdentidadYAcceso.Rol.router import router as rol_router
 from modules.IdentidadYAcceso.DireccionEntrega.router import router as direccion_router
-from modules.VentasPagosTrazabilidad.EstadoPedido.router import router as estado_pedido_router
 from modules.VentasPagosTrazabilidad.FormaPago.router import router as forma_pago_router
 from modules.VentasPagosTrazabilidad.Pedido.router import router as pedido_router
 from modules.CatalogoDeProductos.Categoria.models import Categoria
@@ -141,7 +140,6 @@ app.include_router(producto_router)
 app.include_router(ingrediente_router)
 
 # Sales, Payments & Tracking module
-app.include_router(estado_pedido_router)
 app.include_router(forma_pago_router)
 app.include_router(pedido_router)
 

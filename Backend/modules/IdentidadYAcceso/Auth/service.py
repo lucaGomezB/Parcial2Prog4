@@ -3,8 +3,8 @@ Authentication service module.
 
 Implements core authentication logic:
 
-- Password verification using bcrypt constant-time comparison.
-- Access token creation (short-lived JWT signed with HS256).
+- Password verification via core.security (bcrypt constant-time comparison).
+- Access token creation via core.security (short-lived JWT signed with HS256).
 - Refresh token creation (opaque token, SHA-256 hash stored in DB).
 - Refresh token validation (hash lookup, expiry and revocation checks).
 - Refresh token revocation (soft-delete for logout and rotation).
@@ -15,47 +15,17 @@ refresh token and issues a new one, preventing token reuse in case
 of theft.
 """
 
-import bcrypt
 import hashlib
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
-import jwt
 from sqlmodel import Session, select
+from core.security import verify_password, create_access_token
+
 from modules.IdentidadYAcceso.Usuario.models import Usuario
 from modules.IdentidadYAcceso.RefreshToken.models import RefreshToken
 from ..uow import IdentidadYAccesoUnitOfWork
 from models.base import get_utc_now
-from .config import settings
-from .schemas import TokenData
-
-
-def verify_password(plain: str, hashed: str) -> bool:
-    """
-    Verify a plain-text password against a bcrypt hash.
-
-    Uses bcrypt.checkpw() which extracts the salt from the stored hash,
-    re-hashes the input password with the same salt, and compares.
-    The try/except catches malformed hash strings gracefully.
-    """
-    try:
-        return bcrypt.checkpw(plain.encode('utf-8'), hashed.encode('utf-8'))
-    except Exception:
-        return False
-
-
-def create_access_token(data: TokenData, expires_delta: timedelta | None = None) -> str:
-    """
-    Create a signed JWT access token with user data.
-
-    The token payload includes: user_id, email, exp (expiration),
-    and iat (issued at). The token is signed with HMAC-SHA256
-    using the configured SECRET_KEY.
-    """
-    to_encode = data.model_dump()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire, "iat": datetime.utcnow()})
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def authenticate_user(session: Session, email: str, password: str) -> Usuario | None:

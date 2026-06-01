@@ -22,10 +22,10 @@ from datetime import timedelta
 from sqlmodel import Session
 from core.database import get_session
 from core.rate_limit import limiter
-from .schemas import LoginRequest, TokenResponse, TokenData
+from core.security import settings, create_access_token, TokenData
+from .schemas import LoginRequest, TokenResponse
 from . import service
 from .dependencies import get_current_user
-from .config import settings
 from modules.IdentidadYAcceso.Usuario.models import Usuario
 from modules.IdentidadYAcceso.Usuario.schemas import UsuarioCreate
 from modules.IdentidadYAcceso.Usuario.service import crear_usuario
@@ -88,7 +88,7 @@ def register(
 
     # Auto-login: issue tokens immediately after registration
     token_data = TokenData(user_id=user.id, email=user.email)
-    access_token = service.create_access_token(
+    access_token = create_access_token(
         token_data,
         timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
@@ -129,7 +129,7 @@ def login(
         )
 
     token_data = TokenData(user_id=user.id, email=user.email)
-    access_token = service.create_access_token(
+    access_token = create_access_token(
         token_data,
         timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
@@ -209,7 +209,7 @@ def refresh(
 
     # Issue new token pair
     token_data = TokenData(user_id=user.id, email=user.email)
-    access_token = service.create_access_token(
+    access_token = create_access_token(
         token_data,
         timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )

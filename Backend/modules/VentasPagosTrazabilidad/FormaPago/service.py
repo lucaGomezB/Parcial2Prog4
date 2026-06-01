@@ -32,7 +32,6 @@ class FormaPagoService:
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
             db_obj = FormaPago(**data.model_dump())
             uow.formas_pago.add(db_obj)
-            uow.commit()
             return db_obj
 
     @staticmethod
@@ -46,7 +45,6 @@ class FormaPagoService:
             for key, value in values.items():
                 setattr(db_obj, key, value)
             uow.formas_pago.add(db_obj)
-            uow.commit()
             return db_obj
 
     @staticmethod
@@ -60,5 +58,4 @@ class FormaPagoService:
             if not db_obj:
                 return False
             uow.session.delete(db_obj)
-            uow.commit()
             return True
