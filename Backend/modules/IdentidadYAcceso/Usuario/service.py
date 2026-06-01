@@ -1,8 +1,23 @@
-import bcrypt
+"""
+Usuario (User) service module.
+
+Implements business logic for user management:
+- User creation with optional role assignment (password hashing via core.security).
+- User listing with pagination and optional role filtering.
+- Single user retrieval with eager-loaded roles.
+- Partial update of user fields and/or role reassignment.
+- Soft-delete (logical deletion via deleted_at timestamp).
+
+All operations use the IdentidadYAccesoUnitOfWork to ensure
+transactional consistency across related entities.
+"""
+
 from typing import List, Optional
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
+
+from core.security import get_password_hash
 
 from .models import Usuario
 from .schemas import UsuarioCreate, UsuarioUpdateWithRoles
@@ -10,13 +25,18 @@ from ..Rol.models import Rol
 from ..uow import IdentidadYAccesoUnitOfWork
 
 
-def get_password_hash(password: str) -> str:
-    password_bytes = password.encode('utf-8')
-    salt = bcrypt.gensalt(rounds=12)
-    return bcrypt.hashpw(password_bytes, salt).decode('utf-8')
-
-
 def crear_usuario(session: Session, datos: UsuarioCreate) -> Usuario:
+    """
+    Create a new user with hashed password and optional role assignments.
+
+    Flow:
+    1. Validate input via Unit of Work transaction.
+    2. Create Usuario with bcrypt-hashed password (never plain text).
+    3. Flush to get the auto-generated ID.
+    4. If roles_codigos provided, look up each Rol and assign via M:N relationship.
+    5. Commit the transaction.
+    6. Refresh the user and eagerly load roles for the response.
+    """
     with IdentidadYAccesoUnitOfWork(session) as uow:
         nuevo_usuario = Usuario(
             nombre=datos.nombre,
@@ -28,20 +48,25 @@ def crear_usuario(session: Session, datos: UsuarioCreate) -> Usuario:
         uow.usuarios.add(nuevo_usuario)
         uow.flush()
 
-        # Assign roles if provided
+        # Assign roles if specified
         if datos.roles_codigos:
             for codigo in datos.roles_codigos:
                 rol = uow.roles.get_by_id(codigo)
                 if rol:
                     nuevo_usuario.roles.append(rol)
 
-        uow.commit()
         uow.usuarios.refresh(nuevo_usuario)
         return _load_roles(session, nuevo_usuario)
 
 
 def _load_roles(session: Session, usuario: Usuario):
-    """Eager-load roles relationship so they're available after commit."""
+    """
+    Eager-load the roles relationship after commit.
+
+    Required because after session.commit(), lazy-loaded relationships
+    may fail with "lazy loading outside of session". Re-querying with
+    selectinload ensures roles are available for serialization.
+    """
     session.exec(
         select(Usuario)
         .where(Usuario.id == usuario.id)
@@ -56,19 +81,26 @@ def listar_usuarios(
     limit: int = 100,
     rol_codigo: Optional[str] = None,
 ) -> List[Usuario]:
-    """List users with optional role filter and eager-loaded roles."""
+    """
+    List users with pagination and optional role filtering.
+
+    When rol_codigo is provided, filters by the UsuarioRol join table.
+    Otherwise, returns all non-deleted users ordered by ID descending.
+    """
     with IdentidadYAccesoUnitOfWork(session) as uow:
         if rol_codigo:
             return uow.usuarios.get_all_by_role(rol_codigo, skip=skip, limit=limit)
-        # Use the base get_all which filters soft-deleted
         return uow.usuarios.get_all(skip=skip, limit=limit)
 
 
 def obtener_usuario(session: Session, usuario_id: int) -> Optional[Usuario]:
-    """Get a single user by ID with eager-loaded roles.
-    Returns None if soft-deleted or not found."""
+    """
+    Retrieve a single user by ID with eager-loaded roles.
+
+    Returns None if the user is not found or has been soft-deleted
+    (the repository base already filters deleted_at IS NULL).
+    """
     with IdentidadYAccesoUnitOfWork(session) as uow:
-        # Custom query with selectinload for roles
         stmt = (
             select(Usuario)
             .where(Usuario.id == usuario_id)
@@ -82,19 +114,25 @@ def actualizar_usuario(
     usuario_id: int,
     datos: UsuarioUpdateWithRoles,
 ) -> Optional[Usuario]:
-    """Update user fields and/or reassign roles. Returns None if not found."""
+    """
+    Partially update a user's fields and/or reassign roles.
+
+    Uses exclude_unset=True to update only the fields sent by the client
+    (PATCH semantics). If roles_codigos is provided, the entire role list
+    is replaced. If omitted, roles remain unchanged.
+    """
     with IdentidadYAccesoUnitOfWork(session) as uow:
         usuario = uow.usuarios.get_by_id(usuario_id)
         if not usuario:
             return None
 
-        # Update scalar fields
+        # Update scalar fields only (exclude roles from dict update)
         values = datos.model_dump(exclude_unset=True, exclude={"roles_codigos"})
         for key, value in values.items():
             setattr(usuario, key, value)
         uow.usuarios.add(usuario)
 
-        # Reassign roles if provided
+        # Reassign roles if the field was explicitly provided
         if datos.roles_codigos is not None:
             usuario.roles = []
             for codigo in datos.roles_codigos:
@@ -102,12 +140,17 @@ def actualizar_usuario(
                 if rol:
                     usuario.roles.append(rol)
 
-        uow.commit()
         return _load_roles(session, usuario)
 
 
 def eliminar_usuario(session: Session, usuario_id: int) -> bool:
-    """Soft-delete a user. Returns False if not found."""
+    """
+    Soft-delete a user by setting their deleted_at timestamp.
+
+    The user record is preserved in the database for referential
+    integrity (historical orders, addresses, etc.), but filtered out
+    by all default queries. Returns False if the user is not found.
+    """
     with IdentidadYAccesoUnitOfWork(session) as uow:
         usuario = uow.usuarios.get_by_id(usuario_id)
         if not usuario:
@@ -115,5 +158,4 @@ def eliminar_usuario(session: Session, usuario_id: int) -> bool:
         from models.base import get_utc_now
         usuario.deleted_at = get_utc_now()
         uow.usuarios.add(usuario)
-        uow.commit()
         return True

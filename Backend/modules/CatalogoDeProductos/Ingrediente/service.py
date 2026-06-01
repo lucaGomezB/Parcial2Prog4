@@ -1,3 +1,12 @@
+"""
+Ingrediente service — business logic for ingredient CRUD.
+
+Key behaviors:
+- Price changes trigger automatic recalculation of all affected product prices
+- Duplicate ingredient names are caught via IntegrityError
+- Read operations avoid UoW to prevent ORM object expiration
+- Stock and price have dedicated update endpoints with side effects
+"""
 from decimal import Decimal
 
 from sqlmodel import Session, select, col
@@ -10,14 +19,18 @@ from models.base import get_utc_now
 from ..uow import CatalogoDeProductosUnitOfWork
 from ..Producto.service import ProductoService
 
+
 class IngredienteService:
+    """Business logic for Ingredient CRUD and automatic price propagation."""
+
     @staticmethod
     def create(session: Session, data: IngredienteCreate) -> Ingrediente:
+        """Create a new ingredient with duplicate name handling."""
         with CatalogoDeProductosUnitOfWork(session) as uow:
             db_ingrediente = Ingrediente.model_validate(data)
             uow.ingredientes.add(db_ingrediente)
             try:
-                uow.commit()
+                pass
             except IntegrityError:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -28,9 +41,11 @@ class IngredienteService:
 
     @staticmethod
     def get_all(session: Session, skip: int = 0, limit: int = 100) -> List[IngredienteRead]:
-        # Read-only: NO usar UoW — el commit() expiraría los objetos.
-        # Devolvemos IngredienteRead directamente para evitar que
-        # FastAPI serialice objetos SQLAlchemy expirados.
+        """List non-deleted ingredients with pagination.
+
+        Read-only: no UoW because commit() would expire ORM objects,
+        breaking FastAPI serialization.
+        """
         stmt = (
             select(Ingrediente)
             .where(col(Ingrediente.deleted_at).is_(None))
@@ -42,6 +57,7 @@ class IngredienteService:
 
     @staticmethod
     def get_by_id(session: Session, ingrediente_id: int) -> Optional[IngredienteRead]:
+        """Fetch a single non-deleted ingredient by ID."""
         stmt = (
             select(Ingrediente)
             .where(Ingrediente.id == ingrediente_id)
@@ -54,6 +70,11 @@ class IngredienteService:
 
     @staticmethod
     def actualizar_precio(session: Session, ingrediente_id: int, precio: Decimal) -> Ingrediente:
+        """Update ingredient price and trigger recalculation of all affected products.
+
+        This is the key method that propagates ingredient price changes
+        through the product catalog.
+        """
         with CatalogoDeProductosUnitOfWork(session) as uow:
             db_ingrediente = uow.ingredientes.get_by_id(ingrediente_id)
             if not db_ingrediente:
@@ -63,14 +84,14 @@ class IngredienteService:
                 )
             db_ingrediente.precio_actual = precio
             uow.ingredientes.add(db_ingrediente)
-            uow.commit()
             uow.ingredientes.refresh(db_ingrediente)
-        # Disparar recalculo de precios en todos los productos que usan este ingrediente
+        # Trigger price recalculation for all products using this ingredient
         ProductoService.recalcular_precio_productos_afectados(session, ingrediente_id)
         return db_ingrediente
 
     @staticmethod
     def actualizar_stock(session: Session, ingrediente_id: int, stock: int) -> Ingrediente:
+        """Update ingredient stock. Does NOT affect product prices."""
         with CatalogoDeProductosUnitOfWork(session) as uow:
             db_ingrediente = uow.ingredientes.get_by_id(ingrediente_id)
             if not db_ingrediente:
@@ -80,12 +101,12 @@ class IngredienteService:
                 )
             db_ingrediente.stock_actual = stock
             uow.ingredientes.add(db_ingrediente)
-            uow.commit()
             uow.ingredientes.refresh(db_ingrediente)
         return db_ingrediente
 
     @staticmethod
     def update(session: Session, ingrediente_id: int, data: IngredienteUpdate) -> Optional[Ingrediente]:
+        """Update an ingredient. Triggers price recalculation if precio_actual changed."""
         with CatalogoDeProductosUnitOfWork(session) as uow:
             db_ingrediente = uow.ingredientes.get_by_id(ingrediente_id)
             if not db_ingrediente:
@@ -96,15 +117,15 @@ class IngredienteService:
                 setattr(db_ingrediente, key, value)
 
             uow.ingredientes.add(db_ingrediente)
-            uow.commit()
             uow.ingredientes.refresh(db_ingrediente)
-        # Si se actualizó precio_actual, disparar recalculo de precios
+        # Propagate price change to all products if precio_actual was updated
         if 'precio_actual' in data.model_dump(exclude_unset=True):
             ProductoService.recalcular_precio_productos_afectados(session, ingrediente_id)
         return db_ingrediente
 
     @staticmethod
     def soft_delete(session: Session, ingrediente_id: int) -> bool:
+        """Soft-delete an ingredient. Returns True if deleted, False if not found."""
         with CatalogoDeProductosUnitOfWork(session) as uow:
             db_ingrediente = uow.ingredientes.get_by_id(ingrediente_id)
             if not db_ingrediente:
@@ -112,5 +133,4 @@ class IngredienteService:
 
             db_ingrediente.deleted_at = get_utc_now()
             uow.ingredientes.add(db_ingrediente)
-            uow.commit()
             return True

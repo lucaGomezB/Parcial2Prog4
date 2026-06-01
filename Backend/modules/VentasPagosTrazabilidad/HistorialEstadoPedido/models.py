@@ -1,3 +1,26 @@
+"""
+HistorialEstadoPedido models — Append-only order state history (audit log).
+
+This is an APPEND-ONLY table: rows are INSERTed, never UPDATEd or DELETEd.
+Every state change in the order lifecycle creates one row.
+
+Why APPEND-ONLY?
+    To maintain a COMPLETE TRACEABILITY for each order:
+        - When was it created? (estado_desde = NULL)
+        - When was it confirmed? (PENDIENTE -> CONFIRMADO)
+        - Who confirmed it? (usuario_id)
+        - When was it cancelled? (X -> CANCELADO)
+        - Why was it cancelled? (motivo)
+
+Typical trace for an order:
+    created_at   | desde        | hacia        | user | motivo
+    -------------+--------------+--------------+------+--------
+    10:00        | NULL         | PENDIENTE    | 1    |
+    10:01        | PENDIENTE    | CONFIRMADO   | 1    |
+    10:30        | CONFIRMADO   | EN_PREP      | 2    |
+    10:45        | EN_PREP      | EN_CAMINO    | 2    |
+    11:00        | EN_CAMINO    | ENTREGADO    | 2    |
+"""
 from typing import Optional, TYPE_CHECKING
 from sqlmodel import SQLModel, Field, Relationship
 from datetime import datetime, timezone
@@ -11,6 +34,8 @@ def get_utc_now():
 
 
 class HistorialEstadoPedido(SQLModel, table=True):
+    """Append-only audit log for order state transitions (historialestadopedido)."""
+
     __tablename__ = "historialestadopedido"
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -20,8 +45,8 @@ class HistorialEstadoPedido(SQLModel, table=True):
     usuario_id: Optional[int] = Field(default=None, foreign_key="usuario.id", ondelete="SET NULL")
     motivo: Optional[str] = Field(default=None)
 
-    # Only created_at - no updated_at (append-only)
+    # Only created_at — no updated_at (append-only, never modified)
     created_at: datetime = Field(default_factory=get_utc_now, nullable=False)
 
-    # Relationship
+    # Relationship back to parent order
     pedido: "Pedido" = Relationship(back_populates="historial_estados")

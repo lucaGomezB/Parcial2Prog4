@@ -1,3 +1,11 @@
+"""
+Categoria service — business logic for category CRUD.
+
+Key rules:
+- Category names must be unique (validated before DB insert)
+- A parent category must exist when parent_id is provided
+- Soft-delete is blocked if active products still reference this category
+"""
 from typing import List, Optional
 from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
@@ -10,24 +18,47 @@ from ..producto_categoria import ProductoCategoria
 
 
 class CategoriaService:
+    """Business logic for Category CRUD and validation."""
+
     @staticmethod
     def get_all(session: Session, skip: int = 0, limit: int = 100, parent_id: int | None = None) -> List[Categoria]:
-        with CatalogoDeProductosUnitOfWork(session) as uow:
-            return uow.categorias.get_all(skip=skip, limit=limit, parent_id=parent_id)
+        """List categories with optional parent_id filter for subtree navigation.
+
+        Read-only: avoids UoW because __exit__ would call commit(), expiring ORM
+        objects before FastAPI serialization (see ProductoService.get_all docstring).
+        """
+        stmt = select(Categoria).where(col(Categoria.deleted_at).is_(None)).offset(skip).limit(limit).order_by(Categoria.id.desc())
+        if parent_id is not None:
+            stmt = stmt.where(Categoria.parent_id == parent_id)
+        return session.exec(stmt).all()
 
     @staticmethod
     def get_by_id(session: Session, categoria_id: int) -> Optional[Categoria]:
-        with CatalogoDeProductosUnitOfWork(session) as uow:
-            return uow.categorias.get_by_id(categoria_id)
+        """Fetch a single non-deleted category.
+
+        Read-only: avoids UoW for same reason as get_all (commit would expire ORM).
+        """
+        stmt = select(Categoria).where(Categoria.id == categoria_id).where(col(Categoria.deleted_at).is_(None))
+        return session.exec(stmt).first()
 
     @staticmethod
     def get_root_categories(session: Session) -> List[Categoria]:
-        with CatalogoDeProductosUnitOfWork(session) as uow:
-            return uow.categorias.get_root_categories()
+        """Fetch all root categories (no parent) — used to build the category tree.
+
+        Read-only: avoids UoW for same reason as get_all (commit would expire ORM).
+        """
+        stmt = select(Categoria).where(col(Categoria.deleted_at).is_(None), Categoria.parent_id.is_(None))
+        return session.exec(stmt).all()
 
     @staticmethod
     def create(session: Session, data: CategoriaCreate) -> Categoria:
-        # Validar que el nombre no exista ya (unique constraint)
+        """Create a new category.
+
+        Validates:
+        - Name uniqueness (no duplicate category names)
+        - Parent category exists (FK integrity check)
+        """
+        # Validate name uniqueness before attempting DB insert
         existing = session.exec(
             select(Categoria).where(Categoria.nombre == data.nombre, Categoria.deleted_at.is_(None))
         ).first()
@@ -37,7 +68,7 @@ class CategoriaService:
                 detail=f"Ya existe una categoría con el nombre '{data.nombre}'"
             )
 
-        # Validar que el parent_id exista (FK constraint)
+        # Validate parent exists when specified
         if data.parent_id is not None:
             parent = session.exec(
                 select(Categoria).where(Categoria.id == data.parent_id, Categoria.deleted_at.is_(None))
@@ -51,12 +82,12 @@ class CategoriaService:
         with CatalogoDeProductosUnitOfWork(session) as uow:
             db_categoria = Categoria(**data.model_dump())
             uow.categorias.add(db_categoria)
-            uow.commit()
             uow.categorias.refresh(db_categoria)
             return db_categoria
 
     @staticmethod
     def update(session: Session, categoria_id: int, data: CategoriaUpdate) -> Optional[Categoria]:
+        """Update an existing category. Only provided fields are modified."""
         with CatalogoDeProductosUnitOfWork(session) as uow:
             db_categoria = uow.categorias.get_by_id(categoria_id)
             if not db_categoria:
@@ -67,18 +98,22 @@ class CategoriaService:
                 setattr(db_categoria, key, value)
 
             uow.categorias.add(db_categoria)
-            uow.commit()
             uow.categorias.refresh(db_categoria)
             return db_categoria
 
     @staticmethod
     def soft_delete(session: Session, categoria_id: int) -> Optional[Categoria]:
+        """Soft-delete a category, blocked if active products reference it.
+
+        Business rule: a category with linked active products cannot be
+        deleted — the links must be removed first.
+        """
         with CatalogoDeProductosUnitOfWork(session) as uow:
             db_categoria = uow.categorias.get_by_id(categoria_id)
             if not db_categoria:
                 return None
 
-            # Validate no active products are linked to this category
+            # Check for active product associations before allowing deletion
             stmt = (
                 select(ProductoCategoria)
                 .join(Producto, ProductoCategoria.producto_id == Producto.id)
@@ -97,5 +132,4 @@ class CategoriaService:
 
             db_categoria.deleted_at = get_utc_now()
             uow.categorias.add(db_categoria)
-            uow.commit()
             return db_categoria

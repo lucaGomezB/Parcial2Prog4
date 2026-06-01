@@ -1,3 +1,18 @@
+/**
+ * CategoriasCRUD — Category management admin page.
+ *
+ * Features:
+ *   - Hierarchical tree display (parent-child relationships via subcategorias).
+ *   - Expand/collapse tree nodes.
+ *   - CRUD operations: create, edit, delete categories.
+ *   - Parent category selection via a tree-based modal (prevents cycles).
+ *   - Text filter that recursively filters the tree.
+ *   - Excel export of the flattened (depth-annotated) tree.
+ *
+ * The category tree is fetched once from categoriasApi.getTree() and
+ * filtering is done client-side via filterTree().
+ */
+
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { CategoriaCreate, CategoriaTree } from "../api/categorias";
 import { categoriasApi } from "../api/categorias";
@@ -7,6 +22,10 @@ import { useAppForm, required } from "../hooks/useAppForm";
 
 /* ── Helpers ── */
 
+/**
+ * Recursively flattens a tree of CategoriaTree nodes into a linear array,
+ * annotating each node with its nesting `depth` for display/export.
+ */
 function flattenTree(nodes: CategoriaTree[], depth = 0): (CategoriaTree & { depth: number })[] {
   const result: (CategoriaTree & { depth: number })[] = [];
   for (const node of nodes) {
@@ -18,6 +37,11 @@ function flattenTree(nodes: CategoriaTree[], depth = 0): (CategoriaTree & { dept
   return result;
 }
 
+/**
+ * Recursively filters a category tree by name (case-insensitive).
+ * If a parent matches, all its children are kept; if only children match,
+ * only those children are included (parent omitted to avoid false positives).
+ */
 function filterTree(nodes: CategoriaTree[], query: string): CategoriaTree[] {
   const lower = query.toLowerCase();
   return nodes.reduce<CategoriaTree[]>((acc, node) => {
@@ -33,6 +57,10 @@ function filterTree(nodes: CategoriaTree[], query: string): CategoriaTree[] {
   }, []);
 }
 
+/**
+ * Collects all descendant IDs (including self) for a given node.
+ * Used to exclude self + descendants from the parent selector to prevent cycles.
+ */
 function getDescendantIds(node: CategoriaTree): number[] {
   const ids: number[] = [node.id];
   for (const child of node.subcategorias) {
@@ -41,6 +69,9 @@ function getDescendantIds(node: CategoriaTree): number[] {
   return ids;
 }
 
+/**
+ * Recursively finds a category node by ID within the tree.
+ */
 function findCategoriaInTree(nodes: CategoriaTree[], id: number): CategoriaTree | null {
   for (const node of nodes) {
     if (node.id === id) return node;
@@ -53,6 +84,13 @@ function findCategoriaInTree(nodes: CategoriaTree[], id: number): CategoriaTree 
 }
 
 /* ── Tree Row ── */
+
+/**
+ * A single row in the category tree table.
+ * Supports recursive rendering of children when expanded.
+ *
+ * Indentation is computed from `depth` via inline `paddingLeft` style.
+ */
 function CategoryTreeRow({
   categoria, depth, expanded, onToggle, onEdit, onDelete,
 }: {
@@ -75,11 +113,12 @@ function CategoryTreeRow({
               <button
                 onClick={() => onToggle(categoria.id)}
                 className="border border-gray-400 bg-white text-gray-700 hover:bg-gray-100 text-xs w-5 h-5 flex items-center justify-center rounded-sm cursor-pointer select-none"
-                title={isExpanded ? "Colapsar" : "Expandir"}
+                title={isExpanded ? "Collapse" : "Expand"}
               >
-                {isExpanded ? "−" : "+"}
+                {isExpanded ? "-" : "+"}
               </button>
             ) : (
+              // Spacer to align items without children with those that have expand buttons
               <span className="w-5 h-5 inline-block" />
             )}
             <span className="font-semibold text-gray-900">{categoria.nombre}</span>
@@ -95,6 +134,7 @@ function CategoryTreeRow({
           </div>
         </td>
       </tr>
+      {/* Recursively render children if expanded */}
       {hasChildren && isExpanded && (
         categoria.subcategorias.map((child) => (
           <CategoryTreeRow
@@ -112,7 +152,15 @@ function CategoryTreeRow({
   );
 }
 
-/* ── Selector de Categoría Padre (jerárquico) ── */
+/* ── Selector de Categoria Padre (jerarquico) ── */
+
+/**
+ * Modal for selecting a parent category (hierarchical picker).
+ * Excludes self and all descendants to prevent circular references.
+ *
+ * The `excludeIds` set is built by walking the tree from the current node
+ * downwards (getDescendantIds) — this prevents selecting a descendant as parent.
+ */
 function ParentSelector({ treeData, currentId, onSelect, onClose }: {
   treeData: CategoriaTree[]; currentId: number | null; onSelect: (id: number | null, name: string) => void; onClose: () => void;
 }) {
@@ -160,16 +208,17 @@ function ParentSelector({ treeData, currentId, onSelect, onClose }: {
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white rounded p-6 w-full max-w-md max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold">Seleccionar Categoría Padre</h2>
-          <button onClick={onClose} className="text-gray-500 text-xl cursor-pointer">✕</button>
+          <h2 className="text-lg font-bold">Seleccionar Categoria Padre</h2>
+          <button onClick={onClose} className="text-gray-500 text-xl cursor-pointer">X</button>
         </div>
+        {/* Option to make this a root category (no parent) */}
         <button onClick={() => onSelect(null, "")}
           className="mb-4 bg-gray-600 text-white px-4 py-1 rounded cursor-pointer hover:bg-gray-700">Sin Padre</button>
         <table className="w-full border-collapse border">
           <thead><tr className="bg-gray-200">
             <th className="border p-2 text-left">Nombre</th>
-            <th className="border p-2 text-left">Descripción</th>
-            <th className="border p-2 text-left">Acción</th>
+            <th className="border p-2 text-left">Descripcion</th>
+            <th className="border p-2 text-left">Accion</th>
           </tr></thead>
           <tbody>{renderTreeOptions(treeData)}</tbody>
         </table>
@@ -179,6 +228,17 @@ function ParentSelector({ treeData, currentId, onSelect, onClose }: {
 }
 
 /* ── Main Page ── */
+
+/**
+ * CategoriasCRUD page component.
+ *
+ * State:
+ *   - treeData: the full hierarchical category tree from the backend.
+ *   - expanded: Set<number> of node IDs that are currently expanded.
+ *   - filter: text filter applied client-side.
+ *   - showForm/editingId: control the create/edit inline form.
+ *   - selectedParentName: display text for the chosen parent category.
+ */
 export default function CategoriasCRUD() {
   const [treeData, setTreeData] = useState<CategoriaTree[]>([]);
   const [loading, setLoading] = useState(true);
@@ -189,6 +249,10 @@ export default function CategoriasCRUD() {
   const [showForm, setShowForm] = useState(false);
   const [selectedParentName, setSelectedParentName] = useState("");
 
+  /**
+   * TanStack Form for creating/editing a single category.
+   * Switching between create and edit is handled by reset() with different defaults.
+   */
   const form = useAppForm<CategoriaCreate>({
     defaultValues: { nombre: "", descripcion: "", parent_id: null, orden_display: 0 },
     onSubmit: async ({ value }) => {
@@ -209,10 +273,12 @@ export default function CategoriasCRUD() {
 
   const formRef = useRef<HTMLFormElement>(null);
 
+  // Scroll the form into view when it opens (useful on mobile)
   useEffect(() => {
     if (showForm) formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [showForm]);
 
+  /** Fetches the full category tree from the backend. */
   const loadTree = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -228,6 +294,7 @@ export default function CategoriasCRUD() {
 
   useEffect(() => { loadTree(); }, [loadTree]);
 
+  /** Toggle expansion state for a tree node. */
   const toggleExpand = (id: number) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -237,6 +304,10 @@ export default function CategoriasCRUD() {
     });
   };
 
+  /**
+   * Opens the form in edit mode, pre-fills with the category's current values,
+   * and resolves the parent category name from the tree for display.
+   */
   const handleEdit = (cat: CategoriaTree) => {
     setEditingId(cat.id);
     setShowForm(true);
@@ -259,6 +330,7 @@ export default function CategoriasCRUD() {
     setShowParentSelector(false);
   };
 
+  /** Opens the form in create mode with blank defaults. */
   const handleCreate = () => {
     setEditingId(null);
     setShowForm(true);
@@ -267,6 +339,7 @@ export default function CategoriasCRUD() {
     setShowParentSelector(false);
   };
 
+  /** Closes the form and resets all editing state. */
   const handleCloseForm = () => {
     setShowForm(false);
     setEditingId(null);
@@ -274,8 +347,9 @@ export default function CategoriasCRUD() {
     setSelectedParentName("");
   };
 
+  /** Deletes a category after user confirmation. */
   const handleDelete = async (id: number) => {
-    if (!confirm("¿Eliminar esta categoría?")) return;
+    if (!confirm("Eliminar esta categoria?")) return;
     try {
       await categoriasApi.delete(id);
       loadTree();
@@ -284,7 +358,7 @@ export default function CategoriasCRUD() {
     }
   };
 
-  // Apply filter to tree
+  // Apply filter to tree (client-side recursive filter)
   const displayTree = filter ? filterTree(treeData, filter) : treeData;
 
   // Flat list for Excel export
@@ -292,9 +366,10 @@ export default function CategoriasCRUD() {
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Categorías</h1>
+      <h1 className="text-2xl font-bold mb-4">Categorias</h1>
       {error && <div className="bg-red-100 text-red-700 p-2 mb-4 rounded">{error}</div>}
 
+      {/* Toolbar: filter input + action buttons */}
       <div className="flex gap-2 mb-4 flex-wrap items-center">
         <input type="text" placeholder="Filtrar por nombre..." value={filter}
           onChange={(e) => setFilter(e.target.value)}
@@ -308,6 +383,7 @@ export default function CategoriasCRUD() {
           className="bg-blue-600 text-white px-4 py-1.5 rounded cursor-pointer hover:bg-blue-700">Exportar Excel</button>
       </div>
 
+      {/* Inline create/edit form — shown/hidden via showForm state */}
       {showForm && (
         <form ref={formRef} onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void form.handleSubmit(); }} className="border p-4 mb-4 rounded bg-gray-50 grid grid-cols-2 gap-2">
           <div>
@@ -324,7 +400,7 @@ export default function CategoriasCRUD() {
             </form.Field>
           </div>
           <div>
-            <label className="block text-sm font-medium">Descripción</label>
+            <label className="block text-sm font-medium">Descripcion</label>
             <form.Field name="descripcion">
               {(field) => (
                 <input
@@ -336,8 +412,9 @@ export default function CategoriasCRUD() {
               )}
             </form.Field>
           </div>
+          {/* Parent category selector — opens a tree-based modal */}
           <div>
-            <label className="block text-sm font-medium">Es una subcategoría de:</label>
+            <label className="block text-sm font-medium">Es una subcategoria de:</label>
             <div className="flex gap-2">
               <input value={selectedParentName} readOnly className="border px-2 py-1 rounded flex-1" placeholder="Sin padre" />
               <button type="button" onClick={() => setShowParentSelector(true)}
@@ -355,6 +432,7 @@ export default function CategoriasCRUD() {
         </form>
       )}
 
+      {/* Parent selector modal */}
       {showParentSelector && (
         <ParentSelector
           treeData={treeData}
@@ -368,13 +446,14 @@ export default function CategoriasCRUD() {
         />
       )}
 
+      {/* Loading / tabular tree display */}
       {loading ? (
         <p className="text-gray-500">Cargando...</p>
       ) : (
         <table className="w-full border-collapse border">
           <thead><tr className="bg-gray-200">
             <th className="border p-2 text-left">Nombre</th>
-            <th className="border p-2 text-left">Descripción</th>
+            <th className="border p-2 text-left">Descripcion</th>
             <th className="border p-2 text-left">Acciones</th>
           </tr></thead>
           <tbody>

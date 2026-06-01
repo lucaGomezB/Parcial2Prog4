@@ -1,3 +1,9 @@
+"""
+DetallePedido service — business logic for order detail lines.
+
+Provides methods to fetch and create detail lines, computing the
+subtotal_snap as precio_snapshot * cantidad.
+"""
 from sqlmodel import Session
 from typing import List
 from .models import DetallePedido
@@ -6,13 +12,17 @@ from ..uow import VentasPagosTrazabilidadUnitOfWork
 
 
 class DetallePedidoService:
+    """Business logic for DetallePedido operations."""
+
     @staticmethod
     def get_by_pedido(session: Session, pedido_id: int) -> List[DetallePedido]:
+        """Fetch all detail lines for a given order."""
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
             return uow.detalles.get_by_pedido(pedido_id)
 
     @staticmethod
     def create(session: Session, pedido_id: int, data: DetallePedidoCreate) -> DetallePedido:
+        """Create a new detail line with automatic subtotal_snap computation."""
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
             subtotal = data.precio_snapshot * data.cantidad
             db_detalle = DetallePedido(
@@ -25,5 +35,4 @@ class DetallePedidoService:
                 personalizacion=data.personalizacion,
             )
             uow.detalles.add(db_detalle)
-            uow.commit()
             return db_detalle

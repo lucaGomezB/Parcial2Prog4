@@ -1,0 +1,69 @@
+> Flujo de Transacciones:
+
+Router: Acá están los endpoints. Valida auth, recibe HTTP Request, valida body, convierte la respuesta a JSON y llama a Service.
+
+|
+v
+
+Service: Decide la lógica de negocio (reglas como stock 0 === no disponible). Coordina multipes repos, no sabe de SQL ni HTTP y abre UoWs.
+
+|
+v
+
+UoW: (Transacciones) Agrupa operaciones en UNA transacción, __enter__ y __exit__ maneja commit / rollback respectivamente (garantiza esto) y da acceso a los repositorios
+
+|
+v
+
+Repository: Maneja los datos, habla ÚNICAMENTE con SQLModel/SQLAlchemy, traduce llamadas de dominio a queries y no sabe de transacciones (las maneja UoW).
+
+// Las llamadas de dominio ocurren cuando el Service la pide cosas al Repository en idioma de negocio (no SQL): ingredientes = uow.productos.get_ingredientes(producto_id = 5).
+// Básicamente, el Service dice *lo que quiere*, no *como*
+
+|
+v
+
+BD (PostgreSQL)
+
+========================================================================================================================================================================
+
+Ubicaciones de Configuraciones de Seguridad:
+
+> JWT: Backend/modules/IdentidadYAcceso/auth
+
+config.py -> SECRET_KEY se obtiene desde .env con fallback a secrets.token_hex(32) en desarrollo. Access Token (ACCESS_TOKEN_EXPIRE_MINUTES) y Refresh Token (REFRESH_TOKEN_EXPIRE_DAYS).
+// SECRET_KEY es una clave simétrica que usa HMAC y SHA256 para firmar y verificar la integridad de los JWT. 
+// El token se firma en su cración. (auth/service.py) y se verifica en requests que usan el token (auth/dependencies.py)
+
+service.py -> 
+- verify_password usa bcrypt.checkpw() con comparación de tiempo constante, previniendo timing attacks. //Timing attack es comparar los tiempos en que falla el check un string (ms) para adivinar contraseñas.
+- create_access_token - JWT firmado firmado con exp (Expiration Time) e iat (Issued At) en la carga útil (payload).
+- create_refresh_token - Genera 32 bytes aleatorios con el secret -> Se hashea con SHA256 y se guarda en la BD. Nunca se persiste el token crudo.
+- validate_refresh_token - Busca por hash y verifica que revoked_at es NULL y expires_at > ahora
+- revoke_refresh_token - soft revoke que setea revoked_at (se usa en logout y token rotation)
+- cleanup_expired_tokens - hard-delete de tokens expirados al startup (previniendo que se infle demasiado la Base de Datos).
+
+dependencies.py ->
+
+- get_current_user - Extrae el bearer token, decodiica el JWT y carga el usuario con selectinload(Usuario.roles) (Evita recursión extendida (N+1))
+- require_roles(allowed_roles) - RBAC, Factory que devuelve un validador de dependencias. Se diferencian 401 (Acceso no autorizdo por carencia de credenciales válidas) de los 403 (acceso denegado por no tener el rol necesario en este caso).
+// Un factory es una función o clase cuya función única es crear y devolver objetos.
+
+router.py -> 
+
+- POST /auth/register - fuerza el rol CLIENT en el servidor. Nunca confía en roles enviados por el cliente.
+- POST /auth/login (@limiter.limit("5/minute")) - Se hace rate limiting por IP (slowapi), se permiten 5 intentos de login por minuto.
+- POST /auth/refresh - Revoca el token viejo y emite uno nuevo. Si un token es robado y usado, el próximo refresh lo invalida.
+- POST /auth/logout - Revoca el refresh token y limpia la cookie.
+- Refresh token en la cookie httpOnly (_set_refresh_cookie):
+. httponly = True: JS no lo puede leer (previniendo XSS)
+. samesite = "lax": Protección CSRF (Falsificación de solicitudes entre sitios)
+. path="api/auth/refresh" - Solo se envía al endpoint de resfresh.
+
+modules/IdentidadYAcceso/RefreshToken/models.py -> Contiene el modelo de token que se usa. Si se elimina el usuario, sus tokens también.
+
+modules/IdentidadYAcceso/Usuario/service.py -> Hasheo de contraseñas
+
+core/rate_limit.py -> limiter = Limiter(key_func=get_remote_address), se aplica en /login
+
+main.py maneja CORS app.add_middleware(CORSMiddleware, allow_origins=["*"], ...), se permiten todos los origenes por ahora, con la posibilidad de agregar excepciones explicitas.

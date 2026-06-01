@@ -1,5 +1,9 @@
-from decimal import Decimal
+"""
+Producto repository — data access layer for Product and its many-to-many relations.
 
+Extends BaseRepository with custom queries for managing the link tables
+ProductoCategoria and ProductoIngrediente.
+"""
 from sqlmodel import Session, col, select
 
 from models.base_repository import BaseRepository
@@ -11,10 +15,13 @@ from .models import Producto
 
 
 class ProductoRepository(BaseRepository[Producto]):
+    """Repository for Product entity with link-table management methods."""
+
     def __init__(self, session: Session):
         super().__init__(session, Producto)
 
     def add_categoria_relacion(self, producto_id: int, categoria_id: int, es_principal: bool):
+        """Create a ProductoCategoria link row."""
         enlace = ProductoCategoria(
             producto_id=producto_id,
             categoria_id=categoria_id,
@@ -30,8 +37,9 @@ class ProductoRepository(BaseRepository[Producto]):
         es_removible: bool,
         es_principal: bool,
         orden: int = 0,
-        cantidad: Decimal = 1,
+        cantidad: int = 1,
     ):
+        """Create a ProductoIngrediente link row with relationship metadata."""
         enlace = ProductoIngrediente(
             producto_id=producto_id,
             ingrediente_id=ingrediente_id,
@@ -44,7 +52,12 @@ class ProductoRepository(BaseRepository[Producto]):
         return enlace
 
     def get_ingredientes(self, producto_id: int):
-        """Devuelve los ingredientes asociados a un producto con datos de la relación."""
+        """Return ingredients for a product JOINed with Ingrediente data.
+
+        Uses a two-table join across the link table to collect both the
+        relationship metadata (cantidad, es_removible) and the ingredient
+        name. Results are ordered by the 'orden' display field.
+        """
         statement = (
             select(ProductoIngrediente, Ingrediente)
             .join(Ingrediente, ProductoIngrediente.ingrediente_id == Ingrediente.id)
@@ -65,7 +78,7 @@ class ProductoRepository(BaseRepository[Producto]):
         ]
 
     def get_categorias(self, producto_id: int):
-        """Devuelve las categorías asociadas a un producto."""
+        """Return categories for a product JOINed with Categoria data."""
         statement = (
             select(ProductoCategoria, Categoria)
             .join(Categoria, ProductoCategoria.categoria_id == Categoria.id)
@@ -82,7 +95,7 @@ class ProductoRepository(BaseRepository[Producto]):
         ]
 
     def delete_ingrediente_relacion(self, producto_id: int, ingrediente_id: int):
-        """Elimina la relación entre un producto y un ingrediente."""
+        """Remove an ingredient association. Returns True if a row was deleted."""
         statement = select(ProductoIngrediente).where(
             ProductoIngrediente.producto_id == producto_id,
             ProductoIngrediente.ingrediente_id == ingrediente_id,
@@ -94,7 +107,7 @@ class ProductoRepository(BaseRepository[Producto]):
         return False
 
     def delete_categoria_relacion(self, producto_id: int, categoria_id: int):
-        """Elimina la relación entre un producto y una categoría."""
+        """Remove a category association. Returns True if a row was deleted."""
         statement = select(ProductoCategoria).where(
             ProductoCategoria.producto_id == producto_id,
             ProductoCategoria.categoria_id == categoria_id,

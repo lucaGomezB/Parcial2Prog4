@@ -1,3 +1,20 @@
+"""
+DireccionEntrega (Delivery Address) router module.
+
+Defines CRUD endpoints for user delivery addresses under the /direcciones prefix.
+
+All endpoints require authentication (JWT). Regular users are scoped to
+their own addresses; ADMIN users can access any address.
+
+Endpoints:
+- GET /direcciones: List user's addresses (ADMIN sees all).
+- GET /direcciones/{id}: Get a specific address.
+- POST /direcciones: Create a new address.
+- PATCH /direcciones/{id}: Update address fields.
+- DELETE /direcciones/{id}: Soft-delete an address.
+- PATCH /direcciones/{id}/principal: Set as default address.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 from typing import List
@@ -12,7 +29,7 @@ router = APIRouter(prefix="/direcciones", tags=["Direcciones de Entrega"])
 
 
 def _check_admin(current_user: Usuario) -> bool:
-    """Check if current user has ADMIN role."""
+    """Check if the current user has ADMIN role for cross-user access."""
     return any(rol.codigo == "ADMIN" for rol in current_user.roles)
 
 
@@ -21,7 +38,12 @@ def read_direcciones(
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """List all addresses for the current user. ADMIN sees all."""
+    """
+    GET /direcciones — List delivery addresses for the current user.
+
+    ADMIN users see all addresses across all users.
+    Regular users see only their own addresses.
+    """
     return DireccionEntregaService.get_all(
         session,
         usuario_id=current_user.id,
@@ -35,7 +57,11 @@ def read_direccion(
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """Get a single address by ID. Owner-scoped for CLIENT users."""
+    """
+    GET /direcciones/{direccion_id} — Get a single delivery address by ID.
+
+    Owner-scoped for CLIENT users (cannot access other users' addresses).
+    """
     direccion = DireccionEntregaService.get_by_id(
         session,
         direccion_id=direccion_id,
@@ -53,7 +79,11 @@ def create_direccion(
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """Create a new delivery address for the authenticated user."""
+    """
+    POST /direcciones — Create a new delivery address for the authenticated user.
+
+    If es_principal=True, any existing principal address is automatically unset.
+    """
     return DireccionEntregaService.create(session, data, usuario_id=current_user.id)
 
 
@@ -64,7 +94,12 @@ def update_direccion(
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """Update address fields. Does NOT allow changing es_principal (use /principal endpoint)."""
+    """
+    PATCH /direcciones/{direccion_id} — Update address fields.
+
+    Does NOT allow changing es_principal via this endpoint
+    (use PATCH /direcciones/{id}/principal instead).
+    """
     direccion = DireccionEntregaService.update(
         session,
         direccion_id=direccion_id,
@@ -83,7 +118,12 @@ def delete_direccion(
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """Soft-delete a delivery address."""
+    """
+    DELETE /direcciones/{direccion_id} — Soft-delete a delivery address.
+
+    Sets deleted_at timestamp. The record is preserved in the database
+    for historical order references.
+    """
     deleted = DireccionEntregaService.soft_delete(
         session,
         direccion_id=direccion_id,
@@ -101,9 +141,11 @@ def set_principal_direccion(
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """Toggle an address as the principal delivery address.
-    Unsets any existing principal for this user atomically.
-    Idempotent: if already principal, returns unchanged.
+    """
+    PATCH /direcciones/{direccion_id}/principal — Set an address as the default.
+
+    Atomically unsets any existing principal for the same user.
+    Idempotent: if already principal, returns the address unchanged.
     """
     direccion = DireccionEntregaService.set_principal(
         session,
