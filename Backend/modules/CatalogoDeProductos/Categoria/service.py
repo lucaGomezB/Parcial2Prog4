@@ -1,3 +1,11 @@
+"""
+Categoria service — business logic for category CRUD.
+
+Key rules:
+- Category names must be unique (validated before DB insert)
+- A parent category must exist when parent_id is provided
+- Soft-delete is blocked if active products still reference this category
+"""
 from typing import List, Optional
 from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
@@ -10,24 +18,35 @@ from ..producto_categoria import ProductoCategoria
 
 
 class CategoriaService:
+    """Business logic for Category CRUD and validation."""
+
     @staticmethod
     def get_all(session: Session, skip: int = 0, limit: int = 100, parent_id: int | None = None) -> List[Categoria]:
+        """List categories with optional parent_id filter for subtree navigation."""
         with CatalogoDeProductosUnitOfWork(session) as uow:
             return uow.categorias.get_all(skip=skip, limit=limit, parent_id=parent_id)
 
     @staticmethod
     def get_by_id(session: Session, categoria_id: int) -> Optional[Categoria]:
+        """Fetch a single non-deleted category."""
         with CatalogoDeProductosUnitOfWork(session) as uow:
             return uow.categorias.get_by_id(categoria_id)
 
     @staticmethod
     def get_root_categories(session: Session) -> List[Categoria]:
+        """Fetch all root categories (no parent) — used to build the category tree."""
         with CatalogoDeProductosUnitOfWork(session) as uow:
             return uow.categorias.get_root_categories()
 
     @staticmethod
     def create(session: Session, data: CategoriaCreate) -> Categoria:
-        # Validar que el nombre no exista ya (unique constraint)
+        """Create a new category.
+
+        Validates:
+        - Name uniqueness (no duplicate category names)
+        - Parent category exists (FK integrity check)
+        """
+        # Validate name uniqueness before attempting DB insert
         existing = session.exec(
             select(Categoria).where(Categoria.nombre == data.nombre, Categoria.deleted_at.is_(None))
         ).first()
@@ -37,7 +56,7 @@ class CategoriaService:
                 detail=f"Ya existe una categoría con el nombre '{data.nombre}'"
             )
 
-        # Validar que el parent_id exista (FK constraint)
+        # Validate parent exists when specified
         if data.parent_id is not None:
             parent = session.exec(
                 select(Categoria).where(Categoria.id == data.parent_id, Categoria.deleted_at.is_(None))
@@ -57,6 +76,7 @@ class CategoriaService:
 
     @staticmethod
     def update(session: Session, categoria_id: int, data: CategoriaUpdate) -> Optional[Categoria]:
+        """Update an existing category. Only provided fields are modified."""
         with CatalogoDeProductosUnitOfWork(session) as uow:
             db_categoria = uow.categorias.get_by_id(categoria_id)
             if not db_categoria:
@@ -73,12 +93,17 @@ class CategoriaService:
 
     @staticmethod
     def soft_delete(session: Session, categoria_id: int) -> Optional[Categoria]:
+        """Soft-delete a category, blocked if active products reference it.
+
+        Business rule: a category with linked active products cannot be
+        deleted — the links must be removed first.
+        """
         with CatalogoDeProductosUnitOfWork(session) as uow:
             db_categoria = uow.categorias.get_by_id(categoria_id)
             if not db_categoria:
                 return None
 
-            # Validate no active products are linked to this category
+            # Check for active product associations before allowing deletion
             stmt = (
                 select(ProductoCategoria)
                 .join(Producto, ProductoCategoria.producto_id == Producto.id)

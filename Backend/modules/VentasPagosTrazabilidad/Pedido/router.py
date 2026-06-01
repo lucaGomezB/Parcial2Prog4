@@ -1,3 +1,16 @@
+"""
+Pedido router — API endpoints for order management.
+
+Request flow: HTTP -> FastAPI (Pydantic validation) -> Router -> Service -> DB
+Response flow: DB -> Service -> Pydantic schema -> JSON
+
+Auth:
+    - require_roles(["ADMIN", "PEDIDOS"]) = restricted to admins/order managers
+    - get_current_user = any authenticated user
+    - No decorator = public access
+
+Prefix: /pedidos
+"""
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session
 from typing import List
@@ -22,7 +35,7 @@ def read_all(
     limit: int = Query(100),
     session: Session = Depends(get_session),
 ):
-    """List all orders with pagination. Requires ADMIN or PEDIDOS role."""
+    """GET /pedidos — List ALL orders with pagination. Requires ADMIN or PEDIDOS role."""
     return PedidoService.get_all(session, skip=skip, limit=limit)
 
 
@@ -33,11 +46,14 @@ def read_activos(
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """List active (non-terminal) orders. ADMIN/PEDIDOS see all; regular users see only their own."""
+    """GET /pedidos/activos — List active (non-terminal) orders.
+
+    ADMIN/PEDIDOS see all active orders; regular users only see their own.
+    """
     es_gestor = any(rol.codigo in ("ADMIN", "PEDIDOS") for rol in current_user.roles)
     if es_gestor:
         return PedidoService.get_activos(session, skip=skip, limit=limit)
-    # Usuario común: solo sus pedidos activos
+    # Regular user: filter to their own active orders
     todos_activos = PedidoService.get_activos(session, skip=0, limit=10000)
     return [p for p in todos_activos if p.usuario_id == current_user.id][skip:skip + limit]
 
@@ -49,7 +65,10 @@ def read_historial(
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """List terminal-state orders (ENTREGADO, CANCELADO). ADMIN/PEDIDOS see all; regular users see only their own."""
+    """GET /pedidos/historial — List terminal-state orders (ENTREGADO, CANCELADO).
+
+    ADMIN/PEDIDOS see all history; regular users only see their own.
+    """
     es_gestor = any(rol.codigo in ("ADMIN", "PEDIDOS") for rol in current_user.roles)
     if es_gestor:
         return PedidoService.get_historial(session, skip=skip, limit=limit)
@@ -63,7 +82,10 @@ def read_mis_pedidos(
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """List orders belonging to the currently authenticated user. Any authenticated user can access."""
+    """GET /pedidos/mis-pedidos — List orders belonging to the authenticated user.
+
+    Used for the "My Orders" section in the customer profile.
+    """
     return PedidoService.get_by_usuario_id(session, current_user.id, skip=skip, limit=limit)
 
 
@@ -73,12 +95,15 @@ def read_one(
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """Get a single order by its ID. ADMIN/PEDIDOS can see any; regular users only see their own."""
+    """GET /pedidos/{id} — Get a single order by its ID.
+
+    ADMIN/PEDIDOS can see any order; regular users can only see their own.
+    """
     obj = PedidoService.get_by_id(session, pedido_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
-    # Clientes solo ven sus propios pedidos
+    # Regular users cannot view other users' orders
     if not any(rol.codigo in ("ADMIN", "PEDIDOS") for rol in current_user.roles):
         if obj.usuario_id != current_user.id:
             raise HTTPException(status_code=403, detail="No tienes permiso para ver este pedido")
@@ -92,8 +117,17 @@ def create(
     current_user: Usuario = Depends(get_current_user),
     auto_confirmar: bool = Query(True, description="Auto-advance to CONFIRMADO for client users"),
 ):
-    """Create a new order. Forces the authenticated user as the owner unless ADMIN or PEDIDOS role.
-    For non-admin users, the order is auto-advanced to CONFIRMADO when auto_confirmar=True."""
+    """POST /pedidos — Create a new order.
+
+    Logic:
+    1. Forces the authenticated user as owner unless ADMIN/PEDIDOS supplies a different user_id
+    2. Creates the order in PENDIENTE state with price/name snapshots
+    3. If auto_confirmar=True (default) and user is NOT a manager,
+       automatically advances the order to CONFIRMADO (deducts stock).
+
+    Why auto_confirmar? Customers want their order confirmed immediately.
+    Managers can set auto_confirmar=False to leave it in PENDIENTE for manual review.
+    """
     es_gestor = any(rol.codigo in ("ADMIN", "PEDIDOS") for rol in current_user.roles)
 
     if data.usuario_id is None:
@@ -101,14 +135,14 @@ def create(
 
     pedido = PedidoService.create(session, data)
 
-    # Auto-advance to CONFIRMADO for client users
+    # Auto-advance to CONFIRMADO for client users (deducts stock)
     if not es_gestor and auto_confirmar:
         try:
             pedido, _ = PedidoService.avanzar_estado(session, pedido.id, current_user)
         except HTTPException:
             raise
         except Exception:
-            # If auto-advance fails for non-HTTP errors, the order stays in PENDIENTE
+            # If auto-advance fails for non-HTTP reasons, the order stays in PENDIENTE
             pass
 
     return pedido
@@ -120,7 +154,11 @@ def validar_stock(
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """Pre-validate stock availability for a set of items without creating an order."""
+    """POST /pedidos/validar-stock — Pre-validate stock availability for cart items.
+
+    Read-only check — does NOT reserve or deduct stock.
+    Used by the frontend cart to show real-time stock errors before order creation.
+    """
     return PedidoService.validar_stock_items(session, data)
 
 
@@ -131,7 +169,16 @@ def avanzar(
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """Advance the order to the next FSM state. Requires ADMIN or PEDIDOS role."""
+    """POST /pedidos/{id}/avanzar — Advance the order to the next FSM state.
+
+    Transitions:
+        PENDIENTE -> CONFIRMADO (deducts stock)
+        CONFIRMADO -> EN_PREP (preparation started)
+        EN_PREP -> EN_CAMINO (out for delivery)
+        EN_CAMINO -> ENTREGADO (delivered)
+
+    Requires ADMIN or PEDIDOS role.
+    """
     pedido, estado_anterior = PedidoService.avanzar_estado(session, pedido_id, current_user)
     return PedidoAvanzarResponse(
         id=pedido.id,
@@ -147,7 +194,13 @@ def cancelar(
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """Cancel an order. ADMIN/PEDIDOS always; regular users only in PENDIENTE or CONFIRMADO."""
+    """POST /pedidos/{id}/cancelar — Cancel an order.
+
+    Permission rules:
+        ADMIN/PEDIDOS: can cancel ANY order at ANY state
+        Regular customer: can only cancel PENDIENTE or CONFIRMADO orders
+            (once EN_PREP, the kitchen has started — cancellation is blocked)
+    """
     pedido = PedidoService.cancelar_pedido(session, pedido_id, current_user)
     return PedidoCancelarResponse(
         id=pedido.id,
@@ -160,7 +213,10 @@ def cancelar(
 @router.patch("/{pedido_id}", response_model=PedidoRead,
               dependencies=[Depends(require_roles(["ADMIN", "PEDIDOS"]))])
 def update(pedido_id: int, data: PedidoUpdate, session: Session = Depends(get_session)):
-    """Update an existing order by its ID. Requires ADMIN or PEDIDOS role."""
+    """PATCH /pedidos/{id} — Update order metadata (address, payment method, notes).
+
+    Does NOT modify state or totals. Requires ADMIN or PEDIDOS role.
+    """
     obj = PedidoService.update(session, pedido_id, data)
     if not obj:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
@@ -175,14 +231,23 @@ def actualizar_detalle(
     data: DetallePedidoUpdate,
     session: Session = Depends(get_session),
 ):
-    """Update (or remove) a detail line on a PENDIENTE order. cantidad=0 removes it."""
+    """PATCH /pedidos/{id}/detalles/{producto_id} — Update or remove a detail line.
+
+    cantidad=0 removes the detail line entirely.
+    Only works on PENDIENTE orders (once CONFIRMADO, stock is already deducted).
+    Recalculates subtotal and total after modification. Requires ADMIN or PEDIDOS role.
+    """
     return PedidoService.actualizar_detalle(session, pedido_id, producto_id, data.cantidad)
 
 
 @router.delete("/{pedido_id}", status_code=status.HTTP_204_NO_CONTENT,
                dependencies=[Depends(require_roles(["ADMIN"]))])
 def delete(pedido_id: int, session: Session = Depends(get_session)):
-    """Soft-delete an order by its ID. Requires ADMIN role."""
+    """DELETE /pedidos/{id} — Soft-delete an order by its ID.
+
+    The row remains in the database but is excluded from normal queries.
+    Requires ADMIN role.
+    """
     if not PedidoService.soft_delete(session, pedido_id):
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
     return None

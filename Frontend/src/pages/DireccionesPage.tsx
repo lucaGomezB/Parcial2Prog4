@@ -1,3 +1,17 @@
+/**
+ * DireccionesPage — Delivery addresses management page for authenticated users.
+ *
+ * Features:
+ *   - List all saved addresses with their details.
+ *   - Create, edit, and delete addresses.
+ *   - Set a primary (default) address.
+ *   - Addresses are sorted: primary first, then by created_at descending.
+ *   - Shared modal component (DireccionModal) for both create and edit flows.
+ *
+ * Each address includes: alias, linea1 (street+number), linea2 (apt/floor),
+ * ciudad, provincia, codigo_postal, and a "principal" flag.
+ */
+
 import { useEffect, useState, useCallback } from "react";
 import { useAppForm, required } from "../hooks/useAppForm";
 import {
@@ -20,12 +34,20 @@ interface DireccionFormFields {
   es_principal: boolean;
 }
 
+/**
+ * Shared modal for creating or editing a delivery address.
+ *
+ * Props:
+ *   - direccion: undefined = create mode, defined = edit mode (pre-filled).
+ *   - onSave: called with the form data (auto-detects input vs update shape).
+ *   - onClose: closes the modal without saving.
+ */
 function DireccionModal({
   direccion,
   onClose,
   onSave,
 }: {
-  direccion?: DireccionEntrega;       // undefined → crear, defined → editar
+  direccion?: DireccionEntrega;       // undefined -> crear, defined -> editar
   onClose: () => void;
   onSave: (data: DireccionEntregaInput | DireccionEntregaUpdate) => Promise<void>;
 }) {
@@ -63,7 +85,7 @@ function DireccionModal({
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white rounded p-6 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-bold mb-4">
-          {esEditar ? "Editar Dirección" : "Nueva Dirección"}
+          {esEditar ? "Editar Direccion" : "Nueva Direccion"}
         </h2>
         <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void form.handleSubmit(); }} className="space-y-3">
           <form.Field name="alias">
@@ -88,7 +110,7 @@ function DireccionModal({
             {(field) => (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Calle y Número <span className="text-red-500">*</span>
+                  Calle y Numero <span className="text-red-500">*</span>
                 </label>
                 <input
                   value={field.state.value}
@@ -162,7 +184,7 @@ function DireccionModal({
           <form.Field name="codigo_postal">
             {(field) => (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Código Postal</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Codigo Postal</label>
                 <input
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
@@ -185,7 +207,7 @@ function DireccionModal({
                   onBlur={field.handleBlur}
                   className="cursor-pointer"
                 />
-                <span className="font-medium text-gray-700">Marcar como dirección principal</span>
+                <span className="font-medium text-gray-700">Marcar como direccion principal</span>
               </label>
             )}
           </form.Field>
@@ -211,7 +233,16 @@ function DireccionModal({
     </div>
   );
 }
-/* ── Página principal ── */
+/* ── Pagina principal ── */
+
+/**
+ * DireccionesPage — Page component.
+ *
+ * State:
+ *   - direcciones: sorted list (primary first, then newest).
+ *   - showModal/editando: controls the shared DireccionModal (create vs edit).
+ *   - mensaje/error: feedback banners that auto-dismiss after 3 seconds.
+ */
 export default function DireccionesPage() {
   const [direcciones, setDirecciones] = useState<DireccionEntrega[]>([]);
   const [loading, setLoading] = useState(true);
@@ -220,12 +251,13 @@ export default function DireccionesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editando, setEditando] = useState<DireccionEntrega | undefined>(undefined);
 
+  /** Fetches all addresses from the backend, sorted: primary first, then by created_at DESC. */
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const data = await direccionesApi.getAll();
-      // Ordenar: principal primero, luego por created_at DESC
+      // Sort: principal first, then by created_at DESC
       data.sort((a, b) => {
         if (a.es_principal !== b.es_principal) return a.es_principal ? -1 : 1;
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -240,31 +272,35 @@ export default function DireccionesPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  /** Shows a success banner that auto-clears after 3 seconds. */
   const mostrarMensaje = (msg: string) => {
     setMensaje(msg);
     setTimeout(() => setMensaje(null), 3000);
   };
 
+  /** Creates a new address via the API, shows feedback, and reloads the list. */
   const handleCreate = async (data: DireccionEntregaInput) => {
     await direccionesApi.create(data);
-    mostrarMensaje("Dirección creada");
+    mostrarMensaje("Direccion creada");
     load();
   };
 
+  /** Updates an existing address and optionally marks it as principal. */
   const handleUpdate = async (id: number, data: DireccionEntregaUpdate & { es_principal?: boolean }) => {
     const { es_principal, ...updateData } = data;
     await direccionesApi.update(id, updateData);
     if (es_principal) {
       await direccionesApi.setPrincipal(id);
     }
-    mostrarMensaje("Dirección actualizada");
+    mostrarMensaje("Direccion actualizada");
     load();
   };
 
+  /** Marks an address as the primary (default) delivery address. */
   const handleSetPrincipal = async (id: number) => {
     try {
       await direccionesApi.setPrincipal(id);
-      mostrarMensaje("Dirección marcada como principal");
+      mostrarMensaje("Direccion marcada como principal");
       load();
     } catch (e) {
       setError((e as Error).message);
@@ -272,11 +308,12 @@ export default function DireccionesPage() {
     }
   };
 
+  /** Deletes an address after user confirmation. */
   const handleDelete = async (id: number) => {
-    if (!confirm("¿Estás seguro de eliminar esta dirección?")) return;
+    if (!confirm("Estas seguro de eliminar esta direccion?")) return;
     try {
       await direccionesApi.delete(id);
-      mostrarMensaje("Dirección eliminada");
+      mostrarMensaje("Direccion eliminada");
       load();
     } catch (e) {
       setError((e as Error).message);
@@ -284,11 +321,13 @@ export default function DireccionesPage() {
     }
   };
 
+  /** Opens the edit modal with a pre-populated address. */
   const abrirEditar = (d: DireccionEntrega) => {
     setEditando(d);
     setShowModal(true);
   };
 
+  /** Closes the modal and resets editing state. */
   const cerrarModal = () => {
     setShowModal(false);
     setEditando(undefined);
@@ -302,10 +341,11 @@ export default function DireccionesPage() {
           onClick={() => { setEditando(undefined); setShowModal(true); }}
           className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 cursor-pointer"
         >
-          + Nueva Dirección
+          + Nueva Direccion
         </button>
       </div>
 
+      {/* Feedback banners */}
       {mensaje && (
         <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-2 rounded mb-4">
           {mensaje}
@@ -317,12 +357,13 @@ export default function DireccionesPage() {
         </div>
       )}
 
+      {/* Loading / empty / list */}
       {loading ? (
         <p className="text-gray-500">Cargando direcciones...</p>
       ) : direcciones.length === 0 ? (
         <div className="text-center py-8 text-gray-500">
-          <p className="text-lg mb-2">No tenés direcciones de entrega</p>
-          <p className="text-sm">Agregá una dirección para recibir pedidos.</p>
+          <p className="text-lg mb-2">No tenes direcciones de entrega</p>
+          <p className="text-sm">Agrega una direccion para recibir pedidos.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -346,10 +387,11 @@ export default function DireccionesPage() {
                   <p className="text-sm text-gray-500">{d.linea2}</p>
                 )}
                 <div className="text-xs text-gray-400 mt-1">
-                  {[d.provincia, d.codigo_postal].filter(Boolean).join(" — ")}
+                  {[d.provincia, d.codigo_postal].filter(Boolean).join(" - ")}
                 </div>
               </div>
 
+              {/* Action buttons */}
               <div className="flex gap-1 ml-4">
                 <button
                   onClick={() => abrirEditar(d)}
@@ -377,7 +419,7 @@ export default function DireccionesPage() {
         </div>
       )}
 
-      {/* Modal crear/editar */}
+      {/* Create/edit modal */}
       {showModal && (
         <DireccionModal
           direccion={editando}

@@ -1,3 +1,22 @@
+/**
+ * AdminUsuariosPage — User management admin page (RBAC).
+ *
+ * Access: ADMIN role only (others are redirected to /productos via a guard effect).
+ *
+ * Features:
+ *   - Paginated list of all users with their assigned roles.
+ *   - Create user (with password and role selection).
+ *   - Edit user (personal info + role toggles).
+ *   - Delete user (ADMIN users cannot be deleted).
+ *   - Filter by role.
+ *   - Role badges with color coding by role type.
+ *
+ * State management:
+ *   - useState for the data grid, filter, modals.
+ *   - TanStack Form for both create and edit modals.
+ *   - Roles are fetched from /roles/ once on mount.
+ */
+
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { usuariosApi, type Usuario, type UsuarioCreate, type UsuarioUpdate } from "../api/usuarios";
@@ -11,7 +30,14 @@ interface RolOption {
   nombre: string;
 }
 
-/* ── Modal de edición ── */
+/* ── Modal de edicion ── */
+
+/**
+ * Modal for editing an existing user's personal info and roles.
+ *
+ * The user's current roles are pre-selected. The admin can toggle any role on/off.
+ * The form includes: nombre, apellido, email, celular, and roles.
+ */
 function EditarUsuarioModal({
   usuario,
   todosRoles,
@@ -59,6 +85,7 @@ function EditarUsuarioModal({
     },
   });
 
+  /** Toggles a role code in/out of the selected set. */
   const toggleRol = (codigo: string) => {
     setRolesSel((prev) =>
       prev.includes(codigo)
@@ -154,6 +181,7 @@ function EditarUsuarioModal({
               )}
             </form.Field>
           </div>
+          {/* Role toggle buttons: each role is a pill that can be toggled on/off */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Roles
@@ -197,7 +225,14 @@ function EditarUsuarioModal({
   );
 }
 
-/* ── Modal de creación ── */
+/* ── Modal de creacion ── */
+
+/**
+ * Modal for creating a new user.
+ *
+ * Includes password and confirm password fields with client-side validation.
+ * Default role: CLIENT (pre-selected). The admin can toggle additional roles.
+ */
 function CrearUsuarioModal({
   todosRoles,
   onClose,
@@ -233,11 +268,11 @@ function CrearUsuarioModal({
       setError(null);
 
       if (value.password.length < 6) {
-        setError("La contraseña debe tener al menos 6 caracteres");
+        setError("La contrasena debe tener al menos 6 caracteres");
         return;
       }
       if (value.password !== value.confirmPassword) {
-        setError("Las contraseñas no coinciden");
+        setError("Las contrasenas no coinciden");
         return;
       }
 
@@ -258,6 +293,7 @@ function CrearUsuarioModal({
     },
   });
 
+  /** Toggles a role code in/out of the selected set. */
   const toggleRol = (codigo: string) => {
     setRolesSel((prev) =>
       prev.includes(codigo)
@@ -363,7 +399,7 @@ function CrearUsuarioModal({
           <div className="flex gap-3">
             <div className="flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Contraseña
+                Contrasena
               </label>
               <form.Field
                 name="password"
@@ -384,7 +420,7 @@ function CrearUsuarioModal({
             </div>
             <div className="flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Confirmar contraseña
+                Confirmar contrasena
               </label>
               <form.Field
                 name="confirmPassword"
@@ -405,6 +441,7 @@ function CrearUsuarioModal({
             </div>
           </div>
 
+          {/* Role selection with visual toggle pills */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Roles
@@ -449,7 +486,21 @@ function CrearUsuarioModal({
   );
 }
 
-/* ── Página principal ── */
+/* ── Pagina principal ── */
+
+/**
+ * AdminUsuariosPage — Main page component.
+ *
+ * Guard: redirects non-ADMIN users to /productos on mount.
+ *
+ * State:
+ *   - usuarios: paginated user list from the backend.
+ *   - rolFiltro: optional role filter sent to the API.
+ *   - editando/creando: controls which modal is open (if any).
+ *   - mensaje/error: feedback banners with 3-second auto-dismiss.
+ *
+ * The "Eliminar" button is hidden for ADMIN users (self-preservation).
+ */
 export default function AdminUsuariosPage() {
   const navigate = useNavigate();
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -462,7 +513,7 @@ export default function AdminUsuariosPage() {
   const [editando, setEditando] = useState<Usuario | null>(null);
   const [creando, setCreando] = useState(false);
 
-  // Guard: solo ADMIN puede ver esta página
+  // Guard: only ADMIN can view this page
   const userRoles = getUserRoles();
   const esAdmin = userRoles.includes("ADMIN");
   useEffect(() => {
@@ -471,6 +522,7 @@ export default function AdminUsuariosPage() {
     }
   }, [esAdmin, navigate]);
 
+  /** Shows a success banner that auto-clears after 3 seconds. */
   const mostrarMensaje = (msg: string) => {
     setMensaje(msg);
     setTimeout(() => setMensaje(null), 3000);
@@ -484,6 +536,7 @@ export default function AdminUsuariosPage() {
       .catch(() => {});
   }, [esAdmin]);
 
+  /** Fetches the paginated user list, optionally filtered by a role code. */
   const loadUsuarios = useCallback(async () => {
     if (!esAdmin) return;
     setLoading(true);
@@ -506,12 +559,14 @@ export default function AdminUsuariosPage() {
     loadUsuarios();
   }, [loadUsuarios]);
 
+  /** Persists user edits to the backend. */
   const handleSave = async (id: number, data: UsuarioUpdate) => {
     await usuariosApi.update(id, data);
     mostrarMensaje("Usuario actualizado");
     loadUsuarios();
   };
 
+  /** Persists a new user to the backend. */
   const handleCreate = async (data: UsuarioCreate) => {
     await usuariosApi.create(data);
     mostrarMensaje("Usuario creado exitosamente");
@@ -519,8 +574,9 @@ export default function AdminUsuariosPage() {
     loadUsuarios();
   };
 
+  /** Deletes a user after confirmation. ADMIN users cannot be deleted. */
   const handleDelete = async (id: number) => {
-    if (!confirm("¿Estás seguro de eliminar este usuario?")) return;
+    if (!confirm("Estas seguro de eliminar este usuario?")) return;
     try {
       await usuariosApi.delete(id);
       mostrarMensaje("Usuario eliminado");
@@ -531,6 +587,7 @@ export default function AdminUsuariosPage() {
     }
   };
 
+  /** Color mapping for role badges. */
   const coloresRol: Record<string, string> = {
     ADMIN: "bg-red-100 text-red-800",
     STOCK: "bg-yellow-100 text-yellow-800",
@@ -541,7 +598,7 @@ export default function AdminUsuariosPage() {
   return (
     <div className="p-4">
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">Gestión de Usuarios</h1>
+        <h1 className="text-2xl font-bold">Gestion de Usuarios</h1>
         <button
           onClick={() => setCreando(true)}
           className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 cursor-pointer"
@@ -550,6 +607,7 @@ export default function AdminUsuariosPage() {
         </button>
       </div>
 
+      {/* Feedback banners */}
       {mensaje && (
         <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-2 rounded mb-4">
           {mensaje}
@@ -561,7 +619,7 @@ export default function AdminUsuariosPage() {
         </div>
       )}
 
-      {/* Filtro por rol */}
+      {/* Role filter dropdown */}
       <div className="flex gap-2 mb-4 items-center">
         <label className="text-sm font-medium text-gray-700">Filtrar por rol:</label>
         <select
@@ -581,6 +639,7 @@ export default function AdminUsuariosPage() {
         </select>
       </div>
 
+      {/* Loading / empty / table */}
       {loading ? (
         <p className="text-gray-500">Cargando usuarios...</p>
       ) : usuarios.length === 0 ? (
@@ -608,6 +667,7 @@ export default function AdminUsuariosPage() {
                 <td className="border p-2 text-sm text-gray-600">
                   {u.email}
                 </td>
+                {/* Role badges with role-specific colors */}
                 <td className="border p-2">
                   <div className="flex gap-1 flex-wrap">
                     {u.roles.map((rol) => (
@@ -630,6 +690,7 @@ export default function AdminUsuariosPage() {
                     >
                       Editar
                     </button>
+                    {/* Prevent deletion of ADMIN users (self-preservation) */}
                     {u.roles.every((r) => r.codigo !== "ADMIN") && (
                       <button
                         onClick={() => handleDelete(u.id)}
@@ -646,26 +707,26 @@ export default function AdminUsuariosPage() {
         </table>
       )}
 
-      {/* Paginación */}
+      {/* Pagination */}
       <div className="flex gap-2 mt-4 items-center">
         <button
           disabled={page === 0}
           onClick={() => setPage((p) => p - 1)}
           className="bg-gray-300 px-3 py-1 rounded disabled:opacity-50 cursor-pointer"
         >
-          ← Anterior
+          Anterior
         </button>
-        <span>Página {page + 1}</span>
+        <span>Pagina {page + 1}</span>
         <button
           disabled={usuarios.length < PAGE_SIZE}
           onClick={() => setPage((p) => p + 1)}
           className="bg-gray-300 px-3 py-1 rounded disabled:opacity-50 cursor-pointer"
         >
-          Siguiente →
+          Siguiente
         </button>
       </div>
 
-      {/* Modal creación */}
+      {/* Create modal */}
       {creando && (
         <CrearUsuarioModal
           todosRoles={todosRoles}
@@ -674,7 +735,7 @@ export default function AdminUsuariosPage() {
         />
       )}
 
-      {/* Modal edición */}
+      {/* Edit modal */}
       {editando && (
         <EditarUsuarioModal
           usuario={editando}

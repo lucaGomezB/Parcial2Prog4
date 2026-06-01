@@ -1,3 +1,9 @@
+"""
+Unit of Work for the CatalogoDeProductos module.
+
+Provides a transactional boundary around product, category, and ingredient operations.
+All repositories are accessible as attributes (uow.productos, uow.categorias, uow.ingredientes).
+"""
 from sqlmodel import Session
 
 from .Categoria.repository import CategoriaRepository
@@ -6,6 +12,15 @@ from .Producto.repository import ProductoRepository
 
 
 class CatalogoDeProductosUnitOfWork:
+    """Unit of Work for the Catalog module.
+
+    Usage:
+        with CatalogoDeProductosUnitOfWork(session) as uow:
+            uow.productos.add(...)
+            uow.categorias.add(...)
+            uow.commit()
+    """
+
     def __init__(self, session: Session):
         self.session = session
         self.productos = ProductoRepository(session)

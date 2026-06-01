@@ -1,3 +1,23 @@
+/**
+ * Carrito — Shopping cart page.
+ *
+ * Access: authenticated users only (redirects to /login if no token).
+ *
+ * Features:
+ *   - Display all cart items from localStorage (via getCarrito()).
+ *   - Increment/decrement quantity per item.
+ *   - Remove items from cart.
+ *   - Select delivery address (or pickup at the store).
+ *   - Create a new address inline via a quick modal.
+ *   - Pre-validate stock before creating the order.
+ *   - Stock conflict resolution modal when stock is insufficient.
+ *   - Order creation flow: validate -> create -> redirect to /pedidos.
+ *   - Empty cart state with a link back to the product listing.
+ *
+ * Cart data is persisted in localStorage (see ../utils/carrito).
+ * Direcciones are fetched from the API and cached in local state.
+ */
+
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -20,7 +40,14 @@ import {
 import { getAccessToken } from "../api/client";
 import { useAppForm, required } from "../hooks/useAppForm";
 
-/* ── Modal rápido para crear dirección desde el carrito ── */
+/* ── Modal rapido para crear direccion desde el carrito ── */
+
+/**
+ * Modal for quickly creating a new delivery address inline (from the cart page).
+ *
+ * Fields: alias (optional), linea1 (required), linea2 (optional), ciudad (required).
+ * The address is saved to the API, added to the local list, and auto-selected.
+ */
 function NuevaDireccionModal({
   onClose,
   onSave,
@@ -52,7 +79,7 @@ function NuevaDireccionModal({
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white rounded p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-bold mb-4">Nueva Dirección de Entrega</h2>
+        <h2 className="text-lg font-bold mb-4">Nueva Direccion de Entrega</h2>
         <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void form.handleSubmit(); }} className="space-y-3">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Alias</label>
@@ -71,7 +98,7 @@ function NuevaDireccionModal({
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Calle y Número <span className="text-red-500">*</span>
+              Calle y Numero <span className="text-red-500">*</span>
             </label>
             <form.Field name="linea1" validators={{ onChange: required() }}>
               {(field) => (
@@ -143,6 +170,15 @@ function NuevaDireccionModal({
 }
 
 /* ── Modal de advertencia de stock ── */
+
+/**
+ * Modal shown when stock validation fails before order creation.
+ *
+ * The user can adjust quantities (within available stock) or remove items entirely.
+ * On confirm, the adjustments are applied to the cart and the order is re-attempted.
+ *
+ * Initial quantities are clamped to min(cantidad_solicitada, stock_disponible).
+ */
 function StockWarningModal({
   detalles,
   onAdjust,
@@ -170,7 +206,7 @@ function StockWarningModal({
       <div className="bg-white rounded p-6 w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-bold mb-1">Stock Insuficiente</h2>
         <p className="text-sm text-gray-600 mb-4">
-          Algunos productos no tienen stock suficiente. Ajustá las cantidades o remové los productos para continuar.
+          Algunos productos no tienen stock suficiente. Ajusta las cantidades o remove los productos para continuar.
         </p>
 
         <table className="w-full border-collapse border mb-4">
@@ -180,7 +216,7 @@ function StockWarningModal({
               <th className="border p-2 text-center">Solicitado</th>
               <th className="border p-2 text-center">Stock Disp.</th>
               <th className="border p-2 text-center">Nueva Cant.</th>
-              <th className="border p-2 text-center">Acción</th>
+              <th className="border p-2 text-center">Accion</th>
             </tr>
           </thead>
           <tbody>
@@ -208,7 +244,7 @@ function StockWarningModal({
                   </td>
                   <td className="border p-2 text-center">
                     {seraEliminado ? (
-                      <span className="text-red-600 text-sm font-medium">Se eliminará</span>
+                      <span className="text-red-600 text-sm font-medium">Se eliminara</span>
                     ) : (
                       <button
                         onClick={() => setAjustes((prev) => ({ ...prev, [key]: 0 }))}
@@ -244,10 +280,22 @@ function StockWarningModal({
 }
 
 /* ── Carrito ── */
+
+/**
+ * Carrito — Main shopping cart component.
+ *
+ * Cart items are read from localStorage and sync'd on mount and focus events.
+ * The checkout flow follows these steps:
+ *   1. Pre-validate stock via pedidosApi.validarStock().
+ *   2. If stock OK -> create the order via pedidosApi.create().
+ *   3. If stock fails -> show StockWarningModal, adjust, re-attempt.
+ *   4. On 409 from create (race condition) -> parse stock_insuficiente error.
+ *   5. On success -> clear cart, navigate to /pedidos.
+ */
 export default function Carrito() {
   const navigate = useNavigate();
 
-  // Proteger: solo usuarios autenticados pueden ver el carrito
+  // Guard: only authenticated users can access the cart
   useEffect(() => {
     if (!getAccessToken()) {
       navigate("/login", { replace: true });
@@ -263,12 +311,16 @@ export default function Carrito() {
   const [loadingDirs, setLoadingDirs] = useState(false);
   const [stockWarnings, setStockWarnings] = useState<ValidarStockDetalle[] | null>(null);
 
-  // Sincronizar estado con localStorage al montar
+  // Sync local state with localStorage on mount
   useEffect(() => {
     setItems(getCarrito());
   }, []);
 
-  // Forzar re-render cuando vuelven de otra pestaña
+  /**
+   * Re-reads cart from localStorage on window focus.
+   * This handles cases where the user modifies the cart in another tab
+   * or comes back after navigating away.
+   */
   useEffect(() => {
     const onFocus = () => {
       setItems(getCarrito());
@@ -278,21 +330,20 @@ export default function Carrito() {
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
-  // Cargar direcciones al montar
+  /** Fetches all saved addresses, auto-selecting the primary one if available. */
   const cargarDirecciones = async () => {
     setLoadingDirs(true);
     try {
       const data = await direccionesApi.getAll();
       setDirecciones(data);
-      // Preseleccionar la principal
-      const principal = data.find((d) => d.es_principal);
-      if (principal) {
-        setDireccionSelId(principal.id);
-      } else if (data.length > 0) {
-        setDireccionSelId(data[0].id);
+      // If there are addresses, pre-select the primary one (or the first)
+      // If no addresses exist, direccionSelId stays null = "Retirar en el local"
+      if (data.length > 0) {
+        const principal = data.find((d) => d.es_principal);
+        setDireccionSelId(principal ? principal.id : data[0].id);
       }
     } catch {
-      // Si falla la carga de direcciones, no bloquear el carrito
+      // If address loading fails, don't block the cart UI
     } finally {
       setLoadingDirs(false);
     }
@@ -302,10 +353,12 @@ export default function Carrito() {
     cargarDirecciones();
   }, []);
 
+  /** Removes an item from the cart entirely. */
   const handleRemove = (productoId: number) => {
     setItems(removeFromCart(productoId));
   };
 
+  /** Increments quantity for a cart item. */
   const handleIncrement = (productoId: number) => {
     const item = items.find((i) => i.productoId === productoId);
     if (item) {
@@ -313,6 +366,7 @@ export default function Carrito() {
     }
   };
 
+  /** Decrements quantity for a cart item (minimum 1). */
   const handleDecrement = (productoId: number) => {
     const item = items.find((i) => i.productoId === productoId);
     if (item && item.cantidad > 1) {
@@ -320,8 +374,16 @@ export default function Carrito() {
     }
   };
 
+  /**
+   * Core checkout logic.
+   *
+   * 1. Validates stock via the backend.
+   * 2. If stock is valid, creates the order.
+   * 3. If stock is insufficient, shows the StockWarningModal.
+   * 4. Handles 409 Conflict errors (race condition on stock).
+   */
   const doRealizarPedido = async () => {
-    // Leer items frescos de localStorage para evitar stale closure
+    // Read fresh items from localStorage to avoid stale closure
     const currentItems = getCarrito();
     if (currentItems.length === 0) return;
     setEnviando(true);
@@ -362,10 +424,10 @@ export default function Carrito() {
       setItems([]);
       navigate("/pedidos");
     } catch (e) {
-      // Step 3: Handle 409 from auto-advance (race condition)
+      // Step 3: Handle 409 from auto-advance (stock race condition)
       if (e instanceof AxiosError && e.response?.status === 409) {
         const body = e.response.data as Record<string, unknown>;
-        // FastAPI wraps detail: { detail: { error: "stock_insuficiente", detalles: [...] } }
+        // FastAPI wraps detail in { detail: { error: "stock_insuficiente", detalles: [...] } }
         const detail = body?.detail as Record<string, unknown> | undefined;
         if (detail?.error === "stock_insuficiente" && Array.isArray(detail?.detalles)) {
           setStockWarnings(detail.detalles as ValidarStockDetalle[]);
@@ -373,7 +435,7 @@ export default function Carrito() {
           return;
         }
       }
-      // Generic error handling
+      // Generic error handling — extract detail or message
       if (e instanceof AxiosError && e.response?.data) {
         const data = e.response.data as Record<string, unknown>;
         const detail = data.detail;
@@ -398,6 +460,11 @@ export default function Carrito() {
     doRealizarPedido();
   };
 
+  /**
+   * After stock adjustments from StockWarningModal:
+   * 1. Apply adjustments to localStorage (remove or update quantities).
+   * 2. Re-submit the order with the adjusted items.
+   */
   const handleStockAdjust = (ajustes: Record<string, number>) => {
     for (const [key, nuevaCantidad] of Object.entries(ajustes)) {
       const productoId = Number(key);
@@ -410,12 +477,13 @@ export default function Carrito() {
     setStockWarnings(null);
     const freshItems = getCarrito();
     setItems(freshItems);
-    // Re-submit with FRESH items (doRealizarPedido reads from getCarrito internamente)
+    // Re-submit with fresh items (doRealizarPedido reads from getCarrito internally)
     if (freshItems.length > 0) {
       doRealizarPedido();
     }
   };
 
+  /** Creates a new address, adds it to the list, and selects it. */
   const handleCrearDireccion = async (data: DireccionEntregaInput) => {
     const nueva = await direccionesApi.create(data);
     setDirecciones((prev) => [...prev, nueva]);
@@ -425,11 +493,12 @@ export default function Carrito() {
   const total = getTotal();
   const itemCount = getItemCount();
 
+  // Empty cart state
   if (items.length === 0) {
     return (
       <div className="p-4 text-center">
         <h1 className="text-2xl font-bold mb-4">Carrito</h1>
-        <p className="text-gray-500 mb-4">El carrito está vacío</p>
+        <p className="text-gray-500 mb-4">El carrito esta vacio</p>
         <Link
           to="/productos"
           className="inline-block bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700"
@@ -444,12 +513,14 @@ export default function Carrito() {
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">Carrito ({itemCount} productos)</h1>
 
+      {/* Error banner */}
       {error && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded mb-4">
           Error al crear pedido: {error}
         </div>
       )}
 
+      {/* Cart items table */}
       <table className="w-full border-collapse border mb-4">
         <thead>
           <tr className="bg-gray-200">
@@ -466,13 +537,14 @@ export default function Carrito() {
               <td className="p-2">{item.nombre}</td>
               <td className="p-2">${Number(item.precio).toFixed(2)}</td>
               <td className="p-2 text-center">
+                {/* Quantity controls with +/- buttons */}
                 <span className="inline-flex items-center gap-1">
                   <button
                     onClick={() => handleDecrement(item.productoId)}
                     disabled={item.cantidad <= 1}
                     className="border border-gray-400 bg-white text-gray-700 hover:bg-gray-100 text-sm w-7 h-7 flex items-center justify-center rounded cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                   >
-                    −
+                    -
                   </button>
                   <span className="w-8 text-center font-mono font-semibold">
                     {item.cantidad}
@@ -501,57 +573,64 @@ export default function Carrito() {
         </tbody>
       </table>
 
-      {/* Selector de dirección de entrega */}
+      {/* Delivery address selector */}
       <div className="border-t pt-4 mb-4">
-        <h2 className="text-sm font-semibold text-gray-700 mb-2">Dirección de entrega</h2>
+        <h2 className="text-sm font-semibold text-gray-700 mb-2">Direccion de entrega</h2>
 
         {loadingDirs ? (
           <p className="text-sm text-gray-400">Cargando direcciones...</p>
-        ) : direcciones.length > 0 ? (
+        ) : (
           <div className="flex items-center gap-2">
             <select
-              value={direccionSelId ?? ""}
+              value={direccionSelId === null ? "retiro" : direccionSelId}
               onChange={(e) => {
                 const val = e.target.value;
                 if (val === "nueva") {
                   setShowNewDir(true);
+                } else if (val === "retiro") {
+                  setDireccionSelId(null);
                 } else {
                   setDireccionSelId(val ? Number(val) : null);
                 }
               }}
               className="border border-gray-300 rounded px-3 py-2 text-sm flex-1 max-w-md"
             >
-              {direcciones.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {formatDireccion(d)}{d.es_principal ? " (Principal)" : ""}
-                </option>
-              ))}
+              <option value="retiro">
+                Retirar en el local mas cercano (gratis)
+              </option>
+              {direcciones.length > 0 && (
+                <optgroup label="--- Tus direcciones ---">
+                  {direcciones.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {formatDireccion(d)}{d.es_principal ? " (Principal)" : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
               <option value="nueva" disabled={direcciones.length >= 10}>
-                ─ Agregar nueva dirección ─
+                + Agregar nueva direccion
               </option>
             </select>
-            {direccionSelId && typeof direccionSelId === "number" && (
-              <span className="text-xs text-green-600 font-medium">
-                Con envío (+$50.00)
+            {direccionSelId === null ? (
+              <span className="text-xs text-green-600 font-medium whitespace-nowrap">
+                Retiro en local (gratis)
+              </span>
+            ) : (
+              <span className="text-xs text-blue-600 font-medium whitespace-nowrap">
+                Con envio (+$50.00)
               </span>
             )}
           </div>
-        ) : (
-          <button
-            onClick={() => setShowNewDir(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 cursor-pointer"
-          >
-            + Agregar dirección de entrega
-          </button>
         )}
       </div>
 
+      {/* Subtotal and checkout button */}
       <div className="border-t pt-4 flex justify-between items-center">
         <div className="text-xl font-bold">
           Subtotal: <span className="text-blue-700">${total.toFixed(2)}</span>
           {direccionSelId && typeof direccionSelId === "number" && (
             <span className="text-base font-normal text-gray-500 ml-2">
-              (+ $50.00 envío)
+              (+ $50.00 envio)
             </span>
           )}
         </div>
@@ -564,7 +643,7 @@ export default function Carrito() {
         </button>
       </div>
 
-      {/* Modal de advertencia de stock */}
+      {/* Stock warning modal */}
       {stockWarnings && (
         <StockWarningModal
           detalles={stockWarnings}
@@ -573,7 +652,7 @@ export default function Carrito() {
         />
       )}
 
-      {/* Modal nueva dirección */}
+      {/* New address modal */}
       {showNewDir && (
         <NuevaDireccionModal
           onClose={() => setShowNewDir(false)}

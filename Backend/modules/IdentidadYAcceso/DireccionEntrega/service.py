@@ -1,3 +1,16 @@
+"""
+DireccionEntrega (Delivery Address) service module.
+
+Implements business logic for delivery address management with
+owner-scoping: regular users can only access their own addresses,
+while ADMIN users have cross-user access.
+
+Key behavior:
+- Only one address per user can be marked as 'principal' at a time.
+- Setting a new principal atomically unsets the previous one.
+- All operations are soft-delete aware.
+"""
+
 from typing import Optional
 from fastapi import HTTPException, status
 from sqlmodel import Session
@@ -12,8 +25,15 @@ class DireccionEntregaService:
 
     @staticmethod
     def create(session: Session, data: DireccionEntregaCreate, usuario_id: int) -> DireccionEntrega:
+        """
+        Create a new delivery address for the given user.
+
+        If setting as principal, any existing principal address for
+        this user is automatically unset first (atomic operation within
+        the same transaction).
+        """
         with IdentidadYAccesoUnitOfWork(session) as uow:
-            # If setting as principal, unset any existing principal for this user
+            # Unset existing principal if this new address is marked as principal
             if data.es_principal:
                 existing_principal = uow.direcciones.get_principal(usuario_id)
                 if existing_principal:
@@ -39,13 +59,26 @@ class DireccionEntregaService:
 
     @staticmethod
     def get_all(session: Session, usuario_id: int, es_admin: bool = False) -> list[DireccionEntrega]:
+        """
+        Get all addresses for a user.
+
+        ADMIN users can see all addresses across all users.
+        Regular users only see their own addresses.
+        """
         with IdentidadYAccesoUnitOfWork(session) as uow:
             if es_admin:
                 return uow.direcciones.get_all()
             return uow.direcciones.get_by_usuario(usuario_id)
 
     @staticmethod
-    def get_by_id(session: Session, direccion_id: int, usuario_id: int, es_admin: bool = False) -> Optional[DireccionEntrega]:
+    def get_by_id(
+        session: Session, direccion_id: int, usuario_id: int, es_admin: bool = False
+    ) -> Optional[DireccionEntrega]:
+        """
+        Get a specific address by ID with owner scoping.
+
+        Regular users cannot access addresses belonging to other users.
+        """
         with IdentidadYAccesoUnitOfWork(session) as uow:
             direccion = uow.direcciones.get_by_id(direccion_id)
             if not direccion:
@@ -56,7 +89,17 @@ class DireccionEntregaService:
             return direccion
 
     @staticmethod
-    def update(session: Session, direccion_id: int, data: DireccionEntregaUpdate, usuario_id: int, es_admin: bool = False) -> Optional[DireccionEntrega]:
+    def update(
+        session: Session, direccion_id: int, data: DireccionEntregaUpdate,
+        usuario_id: int, es_admin: bool = False
+    ) -> Optional[DireccionEntrega]:
+        """
+        Partially update a delivery address.
+
+        Does NOT allow changing es_principal through this method
+        (use set_principal endpoint instead). Regular users are
+        scoped to their own addresses.
+        """
         with IdentidadYAccesoUnitOfWork(session) as uow:
             direccion = uow.direcciones.get_by_id(direccion_id)
             if not direccion:
@@ -74,7 +117,15 @@ class DireccionEntregaService:
             return direccion
 
     @staticmethod
-    def set_principal(session: Session, direccion_id: int, usuario_id: int, es_admin: bool = False) -> Optional[DireccionEntrega]:
+    def set_principal(
+        session: Session, direccion_id: int, usuario_id: int, es_admin: bool = False
+    ) -> Optional[DireccionEntrega]:
+        """
+        Set a specific address as the user's principal (default) address.
+
+        Atomically unsets any existing principal for the same user.
+        Idempotent: if the address is already principal, returns unchanged.
+        """
         with IdentidadYAccesoUnitOfWork(session) as uow:
             direccion = uow.direcciones.get_by_id(direccion_id)
             if not direccion:
@@ -82,7 +133,7 @@ class DireccionEntregaService:
             if not es_admin and direccion.usuario_id != usuario_id:
                 return None
 
-            # Idempotent: if already principal, return as-is
+            # Idempotent: already principal, nothing to do
             if direccion.es_principal:
                 return direccion
 
@@ -92,7 +143,7 @@ class DireccionEntregaService:
                 existing_principal.es_principal = False
                 uow.direcciones.add(existing_principal)
 
-            # Set new principal
+            # Set the new principal
             direccion.es_principal = True
             uow.direcciones.add(direccion)
             uow.commit()
@@ -100,7 +151,15 @@ class DireccionEntregaService:
             return direccion
 
     @staticmethod
-    def soft_delete(session: Session, direccion_id: int, usuario_id: int, es_admin: bool = False) -> bool:
+    def soft_delete(
+        session: Session, direccion_id: int, usuario_id: int, es_admin: bool = False
+    ) -> bool:
+        """
+        Soft-delete a delivery address (sets deleted_at timestamp).
+
+        Regular users can only delete their own addresses.
+        Returns True if deleted, False if not found.
+        """
         with IdentidadYAccesoUnitOfWork(session) as uow:
             direccion = uow.direcciones.get_by_id(direccion_id)
             if not direccion:

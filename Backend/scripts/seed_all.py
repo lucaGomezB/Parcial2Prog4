@@ -1,26 +1,31 @@
 """
-seed_all.py  —  Seed completo de la base de datos
-==================================================
-Crea TODOS los datos necesarios para desarrollar y testear:
+seed_all.py  --  Main database seeder for development and testing.
 
-    Roles, Usuarios, Categorías, Ingredientes, Productos,
-    Estados de Pedido y Formas de Pago.
+Creates ALL seed data needed for development and testing workflows:
+    Roles, Users, Categories, Ingredients, Products,
+    Order States, and Payment Methods.
 
-Idempotente: si un registro ya existe, lo saltea.
-Se puede ejecutar con el backend detenido o en funcionamiento.
+Idempotent: skips existing records if already present.
+Can be executed with the backend running or stopped.
 
-Uso:
+Usage:
     python scripts/seed_all.py
 
-Requiere:
-  - PostgreSQL accesible con la config de Backend/.env
-  - Dependencias del backend instaladas
+Requires:
+  - PostgreSQL accessible via Backend/.env configuration
+  - Backend dependencies installed
+
+Ordering dependencies:
+  Roles must be seeded before Users (FK: usuario_rol.rol_codigo).
+  Users before Direcciones (FK: direccionentrega.usuario_id).
+  Categories and Ingredients before Products (FKs via join tables).
 """
+
 import os
 import sys
 from pathlib import Path
 
-# Agregar Backend/ al sys.path
+# Ensure the Backend/ directory is on sys.path so all module imports resolve.
 _BACKEND_DIR = str(Path(__file__).resolve().parent.parent)
 if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
@@ -28,7 +33,8 @@ if _BACKEND_DIR not in sys.path:
 from dotenv import load_dotenv
 from sqlmodel import SQLModel, create_engine, Session
 
-# ── Todos los imports necesarios para que SQLModel.metadata esté completo ──
+# Import all model classes so SQLModel.metadata is fully populated.
+# Without these imports, create_all() would miss tables defined in sub-modules.
 from modules.CatalogoDeProductos.Categoria.models import Categoria
 from modules.CatalogoDeProductos.Producto.models import Producto
 from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
@@ -46,7 +52,7 @@ from modules.VentasPagosTrazabilidad.DetallePedido.models import DetallePedido
 from modules.VentasPagosTrazabilidad.HistorialEstadoPedido.models import HistorialEstadoPedido
 from modules.VentasPagosTrazabilidad.Pago.models import Pago
 
-# ── Reutilizamos las funciones del seed oficial ──
+# Reuse the canonical seed functions from app.db.seed to keep data consistent.
 from app.db.seed import (
     seed_roles,
     seed_users,
@@ -60,13 +66,14 @@ from app.db.seed import (
 
 
 # ═══════════════════════════════════════════════════════════════
-#  RESUMEN
+#  SUMMARY DISPLAY
 # ═══════════════════════════════════════════════════════════════
 
 def mostrar_resumen(session: Session):
-    """Muestra conteo de cada entidad en la BD."""
+    """Display a row count for each entity and list users with their roles."""
     from sqlmodel import select, func
 
+    # Count every entity type to give the developer a quick sanity check.
     totales = {
         "Roles":         session.exec(select(func.count()).select_from(Rol)).one(),
         "Usuarios":      session.exec(select(func.count()).select_from(Usuario)).one(),
@@ -78,51 +85,63 @@ def mostrar_resumen(session: Session):
     }
 
     print(f"\n{'='*40}")
-    print("  RESUMEN DE LA BASE DE DATOS")
+    print("  DATABASE SEED SUMMARY")
     print(f"{'='*40}")
     for nombre, total in totales.items():
         print(f"  {nombre:<20} {total}")
     print(f"{'='*40}")
 
-    print(f"\n  Usuarios disponibles:")
+    # Print each user with their assigned roles for easy login reference.
+    print(f"\n  Available users:")
     for u in session.exec(select(Usuario)).all():
         roles = session.exec(
             select(Rol.codigo)
             .join(UsuarioRol, UsuarioRol.rol_codigo == Rol.codigo)
             .where(UsuarioRol.usuario_id == u.id)
         ).all()
-        roles_str = ", ".join(roles) if roles else "SIN ROL"
+        roles_str = ", ".join(roles) if roles else "NO ROLE"
         print(f"    {u.email:<30} / (pass) -> {roles_str}")
     print()
 
 
 # ═══════════════════════════════════════════════════════════════
-#  MAIN
+#  MAIN ENTRY POINT
 # ═══════════════════════════════════════════════════════════════
 
 def main():
+    """Load environment, create all tables if missing, then seed every entity.
+
+    Seed order respects foreign-key dependencies:
+    roles -> users -> addresses -> categories -> ingredients -> products
+    -> order states -> payment methods.
+    """
     load_dotenv()
     DATABASE_URL = os.getenv("DATABASE_URL")
     if not DATABASE_URL:
-        print("ERROR: DATABASE_URL no encontrada en .env")
+        print("ERROR: DATABASE_URL not found in .env")
         sys.exit(1)
 
-    print("Conectando a la base de datos...")
+    print("Connecting to the database...")
     engine = create_engine(DATABASE_URL, echo=False)
+    # create_all is safe to call repeatedly -- it only creates missing tables.
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as session:
+        # Roles must come first because users depend on them via FK.
         seed_roles(session)
         seed_users(session)
         seed_direcciones(session)
+        # Categories and ingredients are independent of each other but
+        # both must exist before products reference them.
         seed_categorias(session)
         seed_ingredientes(session)
         seed_productos(session)
+        # Order workflow entities, no further dependencies.
         seed_estados_pedido(session)
         seed_formas_pago(session)
         mostrar_resumen(session)
 
-    print("Seed completado exitosamente.\n")
+    print("Seed completed successfully.\n")
 
 
 if __name__ == "__main__":

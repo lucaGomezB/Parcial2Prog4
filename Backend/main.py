@@ -1,3 +1,15 @@
+"""
+FastAPI application factory module.
+
+Implements the application lifespan pattern for managing startup and shutdown
+lifecycle events. The lifespan context manager handles Alembic migrations,
+database seeding, and cleanup tasks automatically when the app starts.
+
+Uses a single global SQLModel engine created from DATABASE_URL environment
+variable. Router inclusion follows a modular architecture where each domain
+module exposes its own APIRouter.
+"""
+
 import logging
 import os
 from decimal import Decimal
@@ -39,33 +51,44 @@ from modules.VentasPagosTrazabilidad.DetallePedido.models import DetallePedido
 from modules.VentasPagosTrazabilidad.HistorialEstadoPedido.models import HistorialEstadoPedido
 from modules.VentasPagosTrazabilidad.Pago.models import Pago
 
-# 1. Carga de entorno y configuración
+# Load environment variables and create the global SQLModel engine
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL, echo=True)
 
-# 2. Definición del Lifespan
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """
+    Application lifespan context manager.
+
+    On startup:
+    1. Runs Alembic migrations to bring the database schema up to date.
+    2. Seeds initial data (roles, users, products, etc.) in an idempotent manner.
+    3. Cleans up any expired refresh tokens left from previous sessions.
+
+    On shutdown: currently a no-op, but can be extended for connection pool
+    cleanup or graceful worker shutdown.
+    """
     # --- Startup ---
     alembic_cfg = Config("alembic.ini")
     command.upgrade(alembic_cfg, "head")
 
-    # Seed roles (idempotente)
+    # Seed roles, users, products, and other reference data (idempotent)
     from app.db.seed import run_seed
     run_seed()
 
-    # Cleanup expired refresh tokens on startup
+    # Cleanup expired refresh tokens to prevent DB bloat
     with Session(engine) as session:
         cleanup_expired_tokens(session)
 
-    yield  # Acá vive la app.
+    yield  # Application runs here — between startup and shutdown
 
     # --- Shutdown ---
     pass
 
 
-# 3. Inicialización de la App con lifespan
+# Initialize the FastAPI application with the lifespan manager
 app = FastAPI(
     title="Sistema de Pedidos API",
     lifespan=lifespan,
@@ -73,10 +96,17 @@ app = FastAPI(
     json_encoders={Decimal: float},
 )
 
-# Rate limiting
+# Attach rate limiter to app state (Slowapi integration)
 app.state.limiter = limiter
 
+
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """
+    Custom exception handler for rate limit exceeded errors.
+
+    Returns a 429 Too Many Requests response with a user-friendly message
+    in Spanish and a Retry-After header indicating 60 seconds.
+    """
     from fastapi.responses import JSONResponse
     response = JSONResponse(
         status_code=429,
@@ -85,8 +115,11 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     response.headers["Retry-After"] = "60"
     return response
 
+
 app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
+# CORS middleware: allows all origins for development.
+# In production, restrict allow_origins to specific frontend domains.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -95,28 +128,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include all domain routers under their respective prefixes
+# Identity & Access module
 app.include_router(auth_router)
 app.include_router(usuario_router)
 app.include_router(rol_router)
 app.include_router(direccion_router)
+
+# Product Catalog module
 app.include_router(categoria_router)
 app.include_router(producto_router)
 app.include_router(ingrediente_router)
+
+# Sales, Payments & Tracking module
 app.include_router(estado_pedido_router)
 app.include_router(forma_pago_router)
 app.include_router(pedido_router)
 
+
 @app.get("/")
 def read_root():
-    return {"status": "online"} # Endpoint para probar si anda la app.
+    """Health check endpoint — returns status online if the app is running."""
+    return {"status": "online"}
+
 
 logger = logging.getLogger(__name__)
 
 
 @app.exception_handler(IntegrityError)
 async def integrity_error_handler(request: Request, exc: IntegrityError):
+    """
+    Global handler for SQLAlchemy IntegrityError exceptions.
+
+    Catches constraint violations (duplicate keys, FK violations, etc.)
+    and returns a user-friendly 400 Bad Request response instead of a
+    raw database error traceback.
+    """
     logger.error("IntegrityError en %s %s: %s", request.method, request.url.path, exc)
     return JSONResponse(
         status_code=400,
         content={"detail": "Error de integridad en la base de datos (Ej: ID inexistente o duplicado)."},
-    )
+    )

@@ -1,3 +1,10 @@
+"""
+Rol (Role) service module.
+
+Implements business logic for role management: create, list, update,
+and delete operations, all wrapped in Unit of Work transactions.
+"""
+
 from sqlmodel import Session
 from .models import Rol
 from .schemas import RolCreate, RolUpdate
@@ -5,6 +12,7 @@ from ..uow import IdentidadYAccesoUnitOfWork
 
 
 def create_rol(session: Session, data: RolCreate):
+    """Create a new role with the provided data."""
     with IdentidadYAccesoUnitOfWork(session) as uow:
         db_rol = Rol.model_validate(data)
         uow.roles.add(db_rol)
@@ -14,11 +22,18 @@ def create_rol(session: Session, data: RolCreate):
 
 
 def get_roles(session: Session):
+    """Retrieve all roles (no pagination needed — small, fixed set)."""
     with IdentidadYAccesoUnitOfWork(session) as uow:
         return uow.roles.get_all()
 
 
 def update_rol(session: Session, codigo: str, data: RolUpdate):
+    """
+    Partially update a role by its semantic code.
+
+    Uses exclude_unset=True for PATCH semantics. Returns None
+    if the role does not exist.
+    """
     with IdentidadYAccesoUnitOfWork(session) as uow:
         db_rol = uow.roles.get_by_codigo(codigo)
         if not db_rol:
@@ -32,6 +47,7 @@ def update_rol(session: Session, codigo: str, data: RolUpdate):
 
 
 def delete_rol(session: Session, codigo: str):
+    """Delete a role by its semantic code. Returns None if not found."""
     with IdentidadYAccesoUnitOfWork(session) as uow:
         db_rol = uow.roles.get_by_codigo(codigo)
         if db_rol:

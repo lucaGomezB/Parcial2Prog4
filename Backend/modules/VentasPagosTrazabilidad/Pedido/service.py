@@ -1,3 +1,19 @@
+"""
+Pedido service — the core business logic module for orders.
+
+This is the most important file in the Sales module. It contains:
+    - Order creation with detail snapshots
+    - Finite State Machine (FSM) for state transitions
+    - Stock deduction for products AND ingredients at confirmation time
+    - Total calculation (subtotal, descuento, costo_envio, total)
+    - Pre-creation stock validation
+    - Cancelation with role-based permissions
+    - Append-only state change history
+
+PATTERN: Unit of Work (UoW)
+    All write operations go through VentasPagosTrazabilidadUnitOfWork,
+    which ensures atomicity: everything commits or everything rolls back.
+"""
 from sqlmodel import Session, select, col
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
@@ -10,6 +26,27 @@ from ..uow import VentasPagosTrazabilidadUnitOfWork
 from ..DetallePedido.models import DetallePedido
 from models.base import get_utc_now
 
+
+# ---------------------------------------------------------------------------
+# FINITE STATE MACHINE (FSM) definition
+# ---------------------------------------------------------------------------
+# Full flow:
+#
+#   PENDIENTE --[confirm]--> CONFIRMADO --[start prep]--> EN_PREP
+#       |                                                        |
+#       |  (customer or admin)         [out for delivery]        |
+#       +--[cancel]--> CANCELADO       EN_CAMINO --[deliver]--> ENTREGADO
+#
+# Terminal states (no further transitions allowed):
+#   - ENTREGADO: delivery completed
+#   - CANCELADO: order cancelled
+#
+# State transition rules:
+#   - Only one state advance at a time
+#   - From PENDIENTE or CONFIRMADO: customer or admin can CANCEL
+#   - From EN_PREP or EN_CAMINO: only ADMIN/PEDIDOS can cancel
+#   - ENTREGADO and CANCELADO are TERMINAL — no coming back
+# ---------------------------------------------------------------------------
 ESTADOS_TERMINALES = {"ENTREGADO", "CANCELADO"}
 
 TRANSICIONES_VALIDAS: dict[str, str] = {
@@ -21,9 +58,16 @@ TRANSICIONES_VALIDAS: dict[str, str] = {
 
 
 class PedidoService:
+    """Business logic for the Order entity — FSM, stock validation, and CRUD."""
+
     @staticmethod
     def _eager(stmt):
-        """Agrega selectinload para detalles en cualquier query de Pedido."""
+        """Add selectinload options to any query for eager-loading relationships.
+
+        SQLAlchemy loads relationships lazily by default — accessing
+        pedido.detalles would trigger an additional SQL query each time (N+1 problem).
+        selectinload loads everything in a single query with JOINs.
+        """
         return stmt.options(
             selectinload(Pedido.detalles),
             selectinload(Pedido.estado),
@@ -32,18 +76,21 @@ class PedidoService:
 
     @staticmethod
     def get_all(session: Session, skip: int = 0, limit: int = 100) -> List[Pedido]:
+        """List ALL orders with pagination. Intended for ADMIN/PEDIDOS users."""
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
             stmt = PedidoService._eager(select(Pedido).offset(skip).limit(limit))
             return uow.session.exec(stmt).all()
 
     @staticmethod
     def get_by_id(session: Session, pedido_id: int) -> Optional[Pedido]:
+        """Fetch a single order by its primary key with eager-loaded details."""
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
             stmt = PedidoService._eager(select(Pedido).where(Pedido.id == pedido_id))
             return uow.session.exec(stmt).first()
 
     @staticmethod
     def get_by_usuario_id(session: Session, usuario_id: int, skip: int = 0, limit: int = 100) -> List[Pedido]:
+        """Fetch non-deleted orders for a specific user, newest first."""
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
             stmt = PedidoService._eager(
                 select(Pedido)
@@ -55,7 +102,10 @@ class PedidoService:
 
     @staticmethod
     def get_activos(session: Session, skip: int = 0, limit: int = 100) -> List[Pedido]:
-        """Retorna pedidos que NO estén en estado terminal, ordenados por created_at DESC."""
+        """Fetch non-terminal orders (not ENTREGADO or CANCELADO), newest first.
+
+        Used for the "active orders" dashboard.
+        """
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
             stmt = PedidoService._eager(
                 select(Pedido)
@@ -68,7 +118,10 @@ class PedidoService:
 
     @staticmethod
     def get_historial(session: Session, skip: int = 0, limit: int = 100) -> List[Pedido]:
-        """Retorna pedidos en estado terminal (ENTREGADO, CANCELADO), ordenados por updated_at DESC."""
+        """Fetch terminal-state orders (ENTREGADO or CANCELADO), most recently updated first.
+
+        Used for the order history view.
+        """
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
             stmt = PedidoService._eager(
                 select(Pedido)
@@ -81,7 +134,7 @@ class PedidoService:
 
     @staticmethod
     def get_historial_by_usuario(session: Session, usuario_id: int, skip: int = 0, limit: int = 100) -> List[Pedido]:
-        """Retorna pedidos en estado terminal de un usuario específico, ordenados por updated_at DESC."""
+        """Fetch terminal-state orders for a specific user, most recently updated first."""
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
             stmt = PedidoService._eager(
                 select(Pedido)
@@ -95,7 +148,20 @@ class PedidoService:
 
     @staticmethod
     def create(session: Session, data: PedidoCreate) -> Pedido:
-        # Auto-select principal address if not specified
+        """Create a new order (the MAIN order creation function).
+
+        Step-by-step logic:
+        1. Auto-select the user's primary delivery address if none specified
+        2. Calculate totals: costo_envio=0 if pickup, total = subtotal - descuento + costo_envio
+        3. Create the Pedido row with estado_codigo = "PENDIENTE"
+        4. Create DetallePedido rows with price/name snapshots
+        5. Register the creation event in HistorialEstadoPedido (estado_desde=NULL)
+
+        IMPORTANT: Stock is NOT deducted here. It is deducted at CONFIRMADO
+        transition time (avanzar_estado). The order sits in PENDIENTE until
+        it is actively confirmed.
+        """
+        # Auto-select user's primary address if none provided
         if data.direccion_id is None:
             from modules.IdentidadYAcceso.DireccionEntrega.repository import DireccionEntregaRepository
 
@@ -122,9 +188,9 @@ class PedidoService:
                 notas=data.notas,
             )
             uow.add(db_pedido)
-            uow.flush()  # para obtener ID antes de crear detalles
+            uow.flush()  # Flush to obtain the pedido ID before creating details
 
-            # Crear DetallePedido snapshots si vienen en el create
+            # Create DetallePedido snapshots if provided in the create request
             if data.detalles:
                 for det in data.detalles:
                     line_total = det.precio_snapshot * det.cantidad
@@ -138,12 +204,12 @@ class PedidoService:
                         personalizacion=det.personalizacion,
                     ))
 
-            # ── Registrar historial de creación (estado_desde=NULL) ──
+            # Register the creation in history (estado_desde=NULL = creation)
             uow.avanzar_estado(
                 pedido=db_pedido,
-                estado_anterior=None,        # NULL = creación
+                estado_anterior=None,        # NULL = creation event
                 estado_siguiente="PENDIENTE",
-                usuario_id=data.usuario_id,  # quien creó el pedido
+                usuario_id=data.usuario_id,  # Who created the order
             )
 
             uow.refresh(db_pedido)
@@ -151,13 +217,18 @@ class PedidoService:
 
     @staticmethod
     def validar_stock_items(session: Session, data: ValidarStockInput) -> ValidarStockResponse:
-        """Verifica stock para un conjunto de items SIN crear pedido ni efectos secundarios."""
+        """Validate stock availability WITHOUT creating an order or any side effects.
+
+        This is a READ-ONLY check used by the frontend cart to show stock
+        errors in real-time. The REAL stock validation (with deduction)
+        happens in avanzar_estado when the order transitions to CONFIRMADO.
+        """
         from modules.CatalogoDeProductos.Producto.models import Producto
 
         errores: list[ValidarStockDetalleResponse] = []
 
         for det in data.detalles:
-            # Validar contra Producto.stock_cantidad
+            # Validate against Producto.stock_cantidad
             prod = session.get(Producto, det.producto_id)
             if not prod:
                 raise HTTPException(status_code=404, detail=f"Producto {det.producto_id} no encontrado")
@@ -177,7 +248,15 @@ class PedidoService:
 
     @staticmethod
     def actualizar_detalle(session: Session, pedido_id: int, producto_id: int, cantidad: int) -> Pedido:
-        """Actualiza o elimina un detalle de pedido PENDIENTE. cantidad=0 lo elimina."""
+        """Update or remove a detail line on a PENDIENTE order.
+
+        cantidad=0 removes the detail line.
+        Only works on PENDIENTE orders — once CONFIRMADO, details are frozen
+        because stock has already been deducted.
+
+        After modification, subtotal and total are recalculated from the
+        remaining details' subtotal_snap values.
+        """
         from ..DetallePedido.models import DetallePedido
 
         db_pedido = PedidoService.get_by_id(session, pedido_id)
@@ -202,7 +281,7 @@ class PedidoService:
                 detalle.subtotal_snap = detalle.precio_snapshot * cantidad
                 uow.add(detalle)
 
-            # Recalcular total del pedido
+            # Recalculate order totals from remaining details
             detalles_restantes = session.exec(
                 select(DetallePedido).where(DetallePedido.pedido_id == pedido_id)
             ).all()
@@ -218,9 +297,22 @@ class PedidoService:
 
     @staticmethod
     def avanzar_estado(session: Session, pedido_id: int, usuario) -> tuple[Pedido, str]:
-        """Avanza el pedido al siguiente estado según la FSM.
-        Registra el cambio en HistorialEstadoPedido (INSERT-only).
-        Retorna (pedido, estado_anterior).
+        """Advance the order to the next FSM state.
+
+        This is the CORE state transition method. Flow:
+        1. Fetch the order, validate it exists
+        2. Check it's not in a terminal state
+        3. Look up the next state from TRANSICIONES_VALIDAS
+        4. If transitioning to CONFIRMADO:
+            a. Validate product stock sufficiency
+            b. Validate ingredient stock sufficiency
+            c. Deduct product stock (stock_cantidad -= cantidad)
+            d. Deduct ingredient stock (stock_actual -= pi.cantidad * det.cantidad)
+        5. Register the change in HistorialEstadoPedido (append-only)
+        6. Return (pedido, estado_anterior)
+
+        IMPORTANT: Do NOT call refresh() before commit() — it would overwrite
+        the in-memory estado_codigo with the pre-transaction value.
         """
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
             db_pedido = uow.pedidos.get_by_id(pedido_id)
@@ -242,7 +334,7 @@ class PedidoService:
 
             estado_siguiente = TRANSICIONES_VALIDAS[estado_anterior]
 
-            # ── Validar stock antes de confirmar ──
+            # Stock validation and deduction only occurs at CONFIRMADO
             if estado_siguiente == "CONFIRMADO":
                 from modules.CatalogoDeProductos.Producto.models import Producto
 
@@ -268,7 +360,7 @@ class PedidoService:
                         },
                     )
 
-                # ── Validar stock de ingredientes ──
+                # Validate ingredient stock levels
                 from modules.CatalogoDeProductos.producto_ingrediente import ProductoIngrediente
                 from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
 
@@ -296,14 +388,14 @@ class PedidoService:
                         },
                     )
 
-                # ── Descontar stock al confirmar pedido ──
+                # Deduct product stock at confirmation
                 for det in db_pedido.detalles:
                     prod = session.get(Producto, det.producto_id)
                     if prod:
                         prod.stock_cantidad = max(0, prod.stock_cantidad - det.cantidad)
                         session.add(prod)
 
-                # ── Descontar stock de ingredientes ──
+                # Deduct ingredient stock at confirmation
                 from modules.CatalogoDeProductos.producto_ingrediente import ProductoIngrediente
                 from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
 
@@ -318,7 +410,7 @@ class PedidoService:
                             ing.stock_actual = max(0, ing.stock_actual - cantidad_a_descontar)
                             session.add(ing)
 
-            # ── Transición atómica via UoW ──
+            # Atomic transition via UoW
             usuario_id = usuario.id if hasattr(usuario, 'id') else None
             uow.avanzar_estado(
                 pedido=db_pedido,
@@ -327,15 +419,19 @@ class PedidoService:
                 usuario_id=usuario_id,
             )
 
-            # NOTA: NO hacer uow.refresh(db_pedido) aquí — el refresh
-            # antes del commit revierte el cambio de estado en memoria
-            # (el objeto ya tiene estado_codigo correcto).
+            # NOTE: Do NOT call uow.refresh(db_pedido) here — refresh before
+            # commit reverts the in-memory estado_codigo to its pre-transaction
+            # value, which would undo the transition we just applied.
             return (db_pedido, estado_anterior)
 
     @staticmethod
     def cancelar_pedido(session: Session, pedido_id: int, usuario) -> Pedido:
-        """Cancela un pedido. ADMIN/PEDIDOS siempre pueden.
-        Usuario común solo en PENDIENTE o CONFIRMADO.
+        """Cancel an order. ADMIN/PEDIDOS users can cancel anytime.
+
+        Permission rules:
+            - ADMIN or PEDIDOS roles: can cancel ALWAYS
+            - Regular customer: only if order is in PENDIENTE or CONFIRMADO
+              (once EN_PREP, the kitchen has started — customer cannot cancel)
         """
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
             db_pedido = uow.pedidos.get_by_id(pedido_id)
@@ -349,12 +445,12 @@ class PedidoService:
                     detail=f"El pedido ya está en estado terminal '{estado_actual}'",
                 )
 
-            # Verificar permisos
+            # Check permissions
             user_roles = [r.codigo for r in usuario.roles] if hasattr(usuario, 'roles') else []
             es_admin = "ADMIN" in user_roles or "PEDIDOS" in user_roles
 
             if not es_admin:
-                # Usuario común: solo puede cancelar si está en PENDIENTE o CONFIRMADO
+                # Regular user: only PENDIENTE or CONFIRMADO can be cancelled
                 estados_permitidos_cliente = {"PENDIENTE", "CONFIRMADO"}
                 if estado_actual not in estados_permitidos_cliente:
                     raise HTTPException(
@@ -371,11 +467,16 @@ class PedidoService:
                 motivo="Cancelado por usuario" if not es_admin else None,
             )
 
-            # SIN refresh — mismo motivo que en avanzar_estado
+            # No refresh — same reason as in avanzar_estado
             return db_pedido
 
     @staticmethod
     def update(session: Session, pedido_id: int, data: PedidoUpdate) -> Optional[Pedido]:
+        """Update order metadata (direccion_id, forma_pago_codigo, notas).
+
+        Only provided fields are applied (exclude_unset=True).
+        Does NOT modify state or totals.
+        """
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
             db_pedido = uow.pedidos.get_by_id(pedido_id)
             if not db_pedido:
@@ -389,6 +490,11 @@ class PedidoService:
 
     @staticmethod
     def soft_delete(session: Session, pedido_id: int) -> bool:
+        """Soft-delete an order by setting deleted_at.
+
+        The row remains in the database for reporting/historical purposes,
+        but is excluded from normal queries (WHERE deleted_at IS NULL).
+        """
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
             db_pedido = uow.pedidos.get_by_id(pedido_id)
             if not db_pedido:

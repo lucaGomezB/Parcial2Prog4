@@ -1,5 +1,7 @@
 """${message}
 
+#Template para crear nuevas versiones automaticamente.
+
 Revision ID: ${up_revision}
 Revises: ${down_revision | comma,n}
 Create Date: ${create_date}

@@ -1,23 +1,37 @@
 """
-Reset the database: DROP ALL tables, recreate from current models, re-seed.
+reset_db.py  --  Destructive database reset utility (pre-Alembic).
 
-Run this when model definitions change and columns are missing in PostgreSQL
-(SQLModel.metadata.create_all does NOT alter existing tables).
+DROPS ALL tables via schema cascade, recreates them from current SQLModel
+definitions, and re-runs the seed.
+
+WARNING: This is a DESTRUCTIVE operation. All data is permanently lost.
+Use this only in local development when model definitions change and
+SQLModel.metadata.create_all cannot keep up (it does NOT run ALTER TABLE).
+
+This script predates Alembic. For production or shared environments, always
+use Alembic migrations instead.
 
 Usage:
-    python scripts/reset_db.py
+    python scripts/reset_db.py          # prompts for confirmation
+    python scripts/reset_db.py --force   # skip confirmation
+
+Requires:
+  - PostgreSQL accessible via Backend/.env
+  - Backend dependencies installed
 """
+
 import os
 import sys
 from pathlib import Path
 
-# Ensure project root is on sys.path so we can import backend modules
+# Ensure the Backend/ directory is on sys.path so module imports resolve.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv
 from sqlmodel import SQLModel, create_engine, Session
 
-# ── Load all models so SQLModel.metadata knows every table ──
+# Import all models to populate SQLModel.metadata with every known table.
+# If any model is missing here, its table will NOT be recreated.
 from modules.CatalogoDeProductos.Categoria.models import Categoria
 from modules.CatalogoDeProductos.Producto.models import Producto
 from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
@@ -37,6 +51,14 @@ from modules.VentasPagosTrazabilidad.Pago.models import Pago
 
 
 def reset_database():
+    """Drop all tables, recreate them, and re-seed.
+
+    Steps performed:
+      1. Drop the entire public schema with CASCADE (removes all tables, types, FKs).
+      2. Recreate the public schema and restore default privileges.
+      3. Create all tables from the current SQLModel metadata.
+      4. Run the seed to populate reference data.
+    """
     load_dotenv()
     DATABASE_URL = os.getenv("DATABASE_URL")
     if not DATABASE_URL:
@@ -46,26 +68,30 @@ def reset_database():
     print(f"Dropping ALL tables from: {DATABASE_URL}")
     engine = create_engine(DATABASE_URL, echo=False)
 
-    # Drop all tables using CASCADE to handle FK dependencies
+    # --- STEP 1: Drop everything ---
+    # DROP SCHEMA public CASCADE removes all objects (tables, sequences, FKs, views).
+    # This is more reliable than dropping individual tables.
     with engine.connect() as conn:
         conn.exec_driver_sql("DROP SCHEMA public CASCADE")
+        # --- STEP 2: Recreate empty schema ---
         conn.exec_driver_sql("CREATE SCHEMA public")
+        # Restore default permissions so the app user can operate normally.
         conn.exec_driver_sql("GRANT ALL ON SCHEMA public TO postgres")
         conn.exec_driver_sql("GRANT ALL ON SCHEMA public TO public")
         conn.commit()
-    print("✓ All tables dropped.")
+    print("All tables dropped.")
 
-    # Recreate all tables with current schema
+    # --- STEP 3: Recreate tables from current model definitions ---
     SQLModel.metadata.create_all(engine)
-    print("✓ All tables recreated with current schema.")
+    print("All tables recreated with current schema.")
 
-    # Re-seed
+    # --- STEP 4: Re-populate with seed data ---
     print("\nRe-seeding...")
     from app.db.seed import run_seed
     run_seed()
-    print("✓ Seed complete.")
+    print("Seed complete.")
 
-    print("\n✅ Database reset and re-seeded successfully.")
+    print("\n Database reset and re-seeded successfully.")
 
 
 if __name__ == "__main__":
