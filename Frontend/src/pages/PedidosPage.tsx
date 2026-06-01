@@ -1,8 +1,32 @@
+/**
+ * PedidosPage — Orders listing and management page.
+ *
+ * Features:
+ *   - Dual view: "activos" (in-progress) vs "historial" (completed/cancelled).
+ *   - Role-based rendering:
+ *       - ADMIN/PEDIDOS (gestor): sees all orders with state-advance buttons.
+ *       - CLIENT: sees only their last 10 active orders, no advance buttons.
+ *   - Order state FSM: PENDIENTE -> CONFIRMADO -> EN_PREP -> EN_CAMINO -> ENTREGADO
+ *   - State badges with color coding via ESTADOS_COLORES.
+ *   - Detail modal (DetallesPopup) for viewing order line items.
+ *   - Stock resolution modal (StockModal) for handling stock_insuficiente errors.
+ *   - Cancel action (with restrictions based on role and state).
+ *   - Auto-limitation: clients see at most 10 active orders (with a banner).
+ *
+ * Sub-components:
+ *   - DetallesPopup: modal showing order line items (product, qty, price, subtotal).
+ *   - StockModal: modal for adjusting quantities when stock is insufficient.
+ */
+
 import { useEffect, useState, useCallback } from "react";
 import { pedidosApi, type Pedido, type DetallePedido, type StockInsuficienteDetalle } from "../api/pedidos";
 import { getUserRoles } from "../api/client";
 import { AxiosError } from "axios";
 
+/**
+ * FSM state colors for order status badges.
+ * Keys match the backend's estado_codigo values.
+ */
 const ESTADOS_COLORES: Record<string, string> = {
   PENDIENTE: "bg-yellow-100 text-yellow-800",
   CONFIRMADO: "bg-blue-100 text-blue-800",
@@ -12,6 +36,10 @@ const ESTADOS_COLORES: Record<string, string> = {
   CANCELADO: "bg-red-100 text-red-800",
 };
 
+/**
+ * Maps non-terminal states to the label text for the "advance" action button.
+ * Terminal states (ENTREGADO, CANCELADO) have no entry here.
+ */
 const ETIQUETAS_AVANCE: Record<string, string> = {
   PENDIENTE: "Confirmar",
   CONFIRMADO: "Preparar",
@@ -19,16 +47,29 @@ const ETIQUETAS_AVANCE: Record<string, string> = {
   EN_CAMINO: "Entregar",
 };
 
+/** Human-readable labels for each order state. */
 const ETIQUETAS_ESTADO: Record<string, string> = {
   PENDIENTE: "Pendiente",
   CONFIRMADO: "Confirmado",
-  EN_PREP: "En Preparación",
+  EN_PREP: "En Preparacion",
   EN_CAMINO: "En Camino",
   ENTREGADO: "Entregado",
   CANCELADO: "Cancelado",
 };
 
-/* ── Popup de Detalles ── */
+/**
+ * DetallesPopup — Modal showing the line items (detalles) of a single order.
+ *
+ * Props:
+ *   - pedido: the order (used for ID, date, total).
+ *   - detalles: array of line items (product snapshot, qty, price, subtotal).
+ *   - onClose: callback to close the modal.
+ *   - esGestor: if true, prepends the order ID to the title.
+ *
+ * Snapshot fields (nombre_snapshot, precio_snapshot, subtotal_snap):
+ * These are a copy of the product name/price at the time the order was placed.
+ * If prices change later, existing orders still show the original agreed prices.
+ */
 function DetallesPopup({ pedido, detalles, onClose, esGestor }: {
   pedido: Pedido; detalles: DetallePedido[]; onClose: () => void; esGestor?: boolean;
 }) {
@@ -37,10 +78,17 @@ function DetallesPopup({ pedido, detalles, onClose, esGestor }: {
       <div className="bg-white rounded p-6 w-full max-w-2xl max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-bold">Detalles del Pedido{esGestor ? ` #${pedido.id}` : ""}</h2>
-          <button onClick={onClose} className="text-gray-500 text-xl cursor-pointer">✕</button>
+          <button onClick={onClose} className="text-gray-500 text-xl cursor-pointer">X</button>
         </div>
-        <p className="text-sm text-gray-500 mb-3">
+        <p className="text-sm text-gray-500 mb-1">
           Fecha: {new Date(pedido.created_at).toLocaleString("es-AR")}
+        </p>
+        <p className="text-sm mb-3">
+          {pedido.direccion_id ? (
+            <span className="text-blue-600">Envio a domicilio</span>
+          ) : (
+            <span className="text-green-600">Retiro en el local</span>
+          )}
         </p>
         <table className="w-full border-collapse border mb-4">
           <thead><tr className="bg-gray-200">
@@ -68,7 +116,17 @@ function DetallesPopup({ pedido, detalles, onClose, esGestor }: {
   );
 }
 
-/* ── Popup de resolución de stock insuficiente ── */
+/**
+ * StockModal — Modal for resolving stock_insuficiente errors.
+ *
+ * When a manager confirms an order but there isn't enough stock, the backend
+ * responds with 409 Conflict + details. This modal lets the manager:
+ *   - Reduce quantities per product (within available stock).
+ *   - Mark products for removal (quantity = 0).
+ *   - Confirm to apply changes and re-attempt order advancement.
+ *
+ * Initial quantities are set to the available stock via useState initializer.
+ */
 function StockModal({ pedido, detalles, onResolve, onCancel }: {
   pedido: Pedido;
   detalles: StockInsuficienteDetalle[];
@@ -98,11 +156,11 @@ function StockModal({ pedido, detalles, onResolve, onCancel }: {
       <div className="bg-white rounded p-6 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-bold text-amber-800">Stock Insuficiente</h2>
-          <button onClick={onCancel} className="text-gray-500 text-xl cursor-pointer">✕</button>
+          <button onClick={onCancel} className="text-gray-500 text-xl cursor-pointer">X</button>
         </div>
         <p className="text-sm text-gray-600 mb-4">
           El pedido <strong>#{pedido.id}</strong> tiene productos con stock insuficiente.
-          Ajustá las cantidades o marcá para eliminar los que no tengan stock.
+          Ajusta las cantidades o marca para eliminar los que no tengan stock.
         </p>
 
         <table className="w-full border-collapse border mb-4">
@@ -134,7 +192,7 @@ function StockModal({ pedido, detalles, onResolve, onCancel }: {
                           })}
                           disabled={cant <= 1}
                           className="border border-gray-400 bg-white text-gray-700 hover:bg-gray-100 text-sm w-6 h-6 flex items-center justify-center rounded cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                        >−</button>
+                        >-</button>
                         <span className="w-6 text-center font-mono text-sm">{cant}</span>
                         <button
                           type="button"
@@ -192,7 +250,24 @@ function StockModal({ pedido, detalles, onResolve, onCancel }: {
   );
 }
 
-/* ── Página principal ── */
+/**
+ * PedidosPage — Main component.
+ *
+ * View modes (ModoVista):
+ *   - "activos": non-terminal orders (PENDIENTE, CONFIRMADO, EN_PREP, EN_CAMINO).
+ *   - "historial": terminal orders (ENTREGADO, CANCELADO).
+ *
+ * Role behavior:
+ *   - Gestor (ADMIN/PEDIDOS): sees all orders, can advance/cancel states.
+ *   - Client: sees only last 10 active orders, no advance button.
+ *
+ * Render states:
+ *   1. Loading -> spinner text.
+ *   2. Error -> red banner (auto-clears after 3s).
+ *   3. Empty -> descriptive empty state per view mode.
+ *   4. Data -> full table with action buttons.
+ *   5. Popups -> DetallesPopup and StockModal (overlaid).
+ */
 type ModoVista = "activos" | "historial";
 
 export default function PedidosPage() {
@@ -210,6 +285,14 @@ export default function PedidosPage() {
 
   const [limiteExcedido, setLimiteExcedido] = useState(false);
 
+  /**
+   * Fetches orders from the backend.
+   * - "activos": calls pedidosApi.getActivos().
+   * - "historial": calls pedidosApi.getHistorial().
+   *
+   * Client filter: non-gestor, non-historial views show max 10 active orders.
+   * If there are more than 10, a banner is shown (limiteExcedido).
+   */
   const loadPedidos = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -219,7 +302,7 @@ export default function PedidosPage() {
         ? await pedidosApi.getHistorial()
         : await pedidosApi.getActivos();
 
-      // Clientes: solo últimos 10 activos
+      // Clients: only last 10 active orders
       const finalData = esGestor || esHistorial ? data : data.slice(0, 10);
       if (!esGestor && !esHistorial && data.length > 10) {
         setLimiteExcedido(true);
@@ -235,10 +318,19 @@ export default function PedidosPage() {
 
   useEffect(() => { loadPedidos(); }, [loadPedidos]);
 
+  /** Switches between "activos" and "historial" view modes. */
   const cambiarModo = (nuevo: ModoVista) => {
     if (nuevo !== modo) setModo(nuevo);
   };
 
+  /**
+   * Advances an order to its next FSM state.
+   * Calls pedidosApi.avanzar(id) on the backend.
+   *
+   * Error 409 (Conflict) handling:
+   * If the response body has detail.error === "stock_insuficiente",
+   * the StockModal is shown instead of displaying a generic error.
+   */
   const handleAvanzar = async (id: number) => {
     try {
       const res = await pedidosApi.avanzar(id);
@@ -261,6 +353,11 @@ export default function PedidosPage() {
     }
   };
 
+  /**
+   * Applies stock adjustments from StockModal and re-attempts order advancement.
+   * For each product, calls pedidosApi.actualizarDetalle() with the adjusted qty.
+   * Quantity = 0 means the product line is removed from the order.
+   */
   const handleResolverStock = async (resoluciones: Record<number, number>) => {
     if (!stockIssue) return;
     try {
@@ -281,8 +378,16 @@ export default function PedidosPage() {
     }
   };
 
+  /**
+   * Cancels an order.
+   * Uses the native browser confirm() dialog before proceeding.
+   *
+   * Restrictions:
+   *   - Clients cannot cancel orders that are in EN_PREP state
+   *     (the button is hidden via conditional render).
+   */
   const handleCancelar = async (id: number) => {
-    if (!confirm("¿Estás seguro de cancelar este pedido?")) return;
+    if (!confirm("Estas seguro de cancelar este pedido?")) return;
     try {
       await pedidosApi.cancelar(id);
       setMensaje("Pedido cancelado");
@@ -296,7 +401,7 @@ export default function PedidosPage() {
 
   return (
     <div className="p-4">
-      {/* Tabs */}
+      {/* Tab bar: Activos | Historial */}
       <div className="flex gap-1 mb-4 border-b border-gray-300">
         <button
           onClick={() => cambiarModo("activos")}
@@ -320,14 +425,16 @@ export default function PedidosPage() {
         </button>
       </div>
 
+      {/* Dynamic title based on mode and role */}
       <h1 className="text-2xl font-bold mb-4">
         {esHistorial
           ? "Historial de Pedidos"
           : esGestor
-            ? "Gestión de Pedidos"
+            ? "Gestion de Pedidos"
             : "Mis Pedidos"}
       </h1>
 
+      {/* Feedback banners */}
       {mensaje && (
         <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-2 rounded mb-4">
           {mensaje}
@@ -339,6 +446,7 @@ export default function PedidosPage() {
         </div>
       )}
 
+      {/* Content area: loading / empty / table */}
       {loading ? (
         <p className="text-gray-500">Cargando pedidos...</p>
       ) : pedidos.length === 0 ? (
@@ -346,28 +454,32 @@ export default function PedidosPage() {
           {esHistorial ? (
             <>
               <p className="text-lg mb-2">No hay historial de pedidos</p>
-              <p className="text-sm">Los pedidos entregados o cancelados aparecerán aquí.</p>
+              <p className="text-sm">Los pedidos entregados o cancelados apareceran aqui.</p>
             </>
           ) : (
             <>
               <p className="text-lg mb-2">No hay pedidos activos</p>
-              <p className="text-sm">Los pedidos finalizados o cancelados no se muestran aquí.</p>
+              <p className="text-sm">Los pedidos finalizados o cancelados no se muestran aqui.</p>
             </>
           )}
         </div>
       ) : (
         <>
+          {/* Limit banner for clients (more than 10 active orders) */}
           {limiteExcedido && (
             <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-2 rounded mb-4 text-sm">
-              Mostrando los últimos 10 pedidos activos. Los anteriores están disponibles en el historial.
+              Mostrando los ultimos 10 pedidos activos. Los anteriores estan disponibles en el historial.
             </div>
           )}
+
+          {/* Orders table — columns adapt based on role */}
           <table className="w-full border-collapse border">
             <thead><tr className="bg-gray-200">
               {esGestor && <th className="border p-2 text-left">ID</th>}
               {esGestor && <th className="border p-2 text-left">Usuario</th>}
               <th className="border p-2 text-left">Fecha</th>
               <th className="border p-2 text-left">Estado</th>
+              <th className="border p-2 text-left">Entrega</th>
               <th className="border p-2 text-right">Total</th>
               <th className="border p-2 text-left">Acciones</th>
             </tr></thead>
@@ -386,10 +498,18 @@ export default function PedidosPage() {
                       hour: "2-digit", minute: "2-digit",
                     })}
                   </td>
+                  {/* State badge with role-specific color */}
                   <td className="p-2">
                     <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${ESTADOS_COLORES[ped.estado_codigo] || "bg-gray-100"}`}>
                       {ETIQUETAS_ESTADO[ped.estado_codigo] || ped.estado_codigo}
                     </span>
+                  </td>
+                  <td className="p-2 text-xs">
+                    {ped.direccion_id ? (
+                      <span className="text-blue-600 font-medium">Envio</span>
+                    ) : (
+                      <span className="text-green-600 font-medium">Retiro en local</span>
+                    )}
                   </td>
                   <td className="p-2 text-right font-mono font-semibold">
                     ${parseFloat(ped.total).toFixed(2)}
@@ -402,6 +522,7 @@ export default function PedidosPage() {
                       >
                         Ver Detalles
                       </button>
+                      {/* Advance button: only for gestor, non-terminal states */}
                       {!esHistorial && esGestor && ETIQUETAS_AVANCE[ped.estado_codigo] && (
                         <button
                           onClick={() => handleAvanzar(ped.id)}
@@ -410,6 +531,7 @@ export default function PedidosPage() {
                           {ETIQUETAS_AVANCE[ped.estado_codigo]}
                         </button>
                       )}
+                      {/* Cancel button: gestor always, client only if not EN_PREP */}
                       {!esHistorial && (esGestor || ped.estado_codigo !== "EN_PREP") && (
                         <button
                           onClick={() => handleCancelar(ped.id)}
@@ -426,7 +548,8 @@ export default function PedidosPage() {
           </table>
         </>
       )}
-      {/* Popup de detalles */}
+
+      {/* Detail popup modal */}
       {detailPopup && (
         <DetallesPopup
           pedido={detailPopup}
@@ -436,7 +559,7 @@ export default function PedidosPage() {
         />
       )}
 
-      {/* Popup de resolución de stock */}
+      {/* Stock resolution modal */}
       {stockIssue && (
         <StockModal
           pedido={stockIssue.pedido}

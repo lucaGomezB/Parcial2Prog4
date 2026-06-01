@@ -1,3 +1,17 @@
+/**
+ * IngredientesCRUD — Ingredients (insumos) management admin page.
+ *
+ * Features:
+ *   - Paginated list with client-side text filter.
+ *   - CRUD: create, edit, delete ingredients.
+ *   - Inline editing for stock (column click -> input).
+ *   - Inline editing for price (column click -> input).
+ *   - Allergen toggle (es_alergeno) via the create/edit form.
+ *   - Excel export of filtered or full data.
+ *
+ * State management: useReducer for the data grid, TanStack Form for create/edit.
+ */
+
 import { useReducer, useEffect, useCallback } from "react";
 import { AxiosError } from "axios";
 import type { Ingrediente, IngredienteCreate } from "../api/ingredientes";
@@ -7,6 +21,7 @@ import { useAppForm, required } from "../hooks/useAppForm";
 
 const PAGE_SIZE = 10;
 
+/** All state for the data grid and inline editing. */
 interface State {
   items: Ingrediente[];
   loading: boolean;
@@ -46,6 +61,7 @@ function reducer(state: State, action: Action): State {
     case "SET_PAGE":
       return { ...state, page: action.payload };
     case "SET_FILTER":
+      // Reset to first page when filter changes
       return { ...state, filter: action.payload, page: 0 };
     case "START_EDIT":
       return { ...state, editingId: action.payload.id, showForm: true };
@@ -85,6 +101,7 @@ const init: State = {
 export default function IngredientesCRUD() {
   const [state, dispatch] = useReducer(reducer, init);
 
+  /** Fetches the current page of ingredients from the backend. */
   const fetchData = useCallback(async () => {
     dispatch({ type: "SET_LOADING", payload: true });
     try {
@@ -97,8 +114,10 @@ export default function IngredientesCRUD() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ── TanStack Form ──
-
+  /**
+   * TanStack Form for creating/editing an ingredient.
+   * Fields: nombre, es_alergeno, precio_actual, stock_actual.
+   */
   const form = useAppForm<IngredienteCreate>({
     defaultValues: { nombre: "", es_alergeno: true, precio_actual: 0, stock_actual: 0 },
     onSubmit: async ({ value }) => {
@@ -119,13 +138,13 @@ export default function IngredientesCRUD() {
     },
   });
 
-  // ── Action wrappers that combine TanStack Form + reducer ──
-
+  /** Opens the create form with blank defaults. */
   const handleStartCreate = () => {
     form.reset();
     dispatch({ type: "START_CREATE" });
   };
 
+  /** Opens the edit form pre-filled with the ingredient's current values. */
   const handleStartEdit = (ing: Ingrediente) => {
     form.setFieldValue("nombre", ing.nombre);
     form.setFieldValue("es_alergeno", ing.es_alergeno);
@@ -134,13 +153,17 @@ export default function IngredientesCRUD() {
     dispatch({ type: "START_EDIT", payload: ing });
   };
 
+  /** Closes the form and resets all editing state. */
   const handleCloseForm = () => {
     form.reset();
     dispatch({ type: "CLOSE_FORM" });
   };
 
-  // ── Other handlers (unchanged) ──
-
+  /**
+   * Exports ingredients to Excel.
+   * Fetches up to 10,000 records, applies the current filter client-side,
+   * and exports only matching items.
+   */
   const handleExport = async () => {
     try {
       const allData = await ingredientesApi.getAll(0, 10000);
@@ -151,7 +174,7 @@ export default function IngredientesCRUD() {
         .map(({ id, nombre, es_alergeno, precio_actual, stock_actual }) => ({
           id,
           nombre,
-          es_alergeno: es_alergeno ? "Sí" : "No",
+          es_alergeno: es_alergeno ? "Si" : "No",
           precio_actual: `$${Number(precio_actual).toFixed(2)}`,
           stock_actual,
         }));
@@ -169,8 +192,9 @@ export default function IngredientesCRUD() {
     }
   };
 
+  /** Deletes an ingredient after user confirmation. */
   const handleDelete = async (id: number) => {
-    if (!confirm("¿Eliminar este ingrediente?")) return;
+    if (!confirm("Eliminar este ingrediente?")) return;
     try {
       await ingredientesApi.delete(id);
       fetchData();
@@ -179,6 +203,7 @@ export default function IngredientesCRUD() {
     }
   };
 
+  /** Saves the inline stock edit value to the backend. */
   const handleInlineStockSave = async (id: number) => {
     if (!state.inlineStockEdit) return;
     const val = Number(state.inlineStockEdit.value);
@@ -192,6 +217,7 @@ export default function IngredientesCRUD() {
     }
   };
 
+  /** Saves the inline price edit value to the backend. */
   const handleInlinePrecioSave = async (id: number) => {
     if (!state.inlinePrecioEdit) return;
     const val = Number(state.inlinePrecioEdit.value);
@@ -205,14 +231,16 @@ export default function IngredientesCRUD() {
     }
   };
 
+  // Client-side filter for the current page
   const filtered = state.items.filter((i) =>
     i.nombre.toLowerCase().includes(state.filter.toLowerCase())
   );
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Ingredientes</h1>
+      <h1 className="text-2xl font-bold mb-4">Insumos</h1>
       {state.error && <div className="bg-red-100 text-red-700 p-2 mb-4 rounded">{state.error}</div>}
+      {/* Toolbar: filter, create, export */}
       <div className="flex gap-2 mb-4 flex-wrap">
         <input type="text" placeholder="Filtrar por nombre..." value={state.filter}
           onChange={(e) => dispatch({ type: "SET_FILTER", payload: e.target.value })}
@@ -222,6 +250,7 @@ export default function IngredientesCRUD() {
         <button onClick={handleExport}
           className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer">Exportar Excel</button>
       </div>
+      {/* Inline create/edit form */}
       {state.showForm && (
         <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void form.handleSubmit(); }} className="border p-4 mb-4 rounded bg-gray-50 flex gap-4 items-end flex-wrap">
           <div>
@@ -237,11 +266,12 @@ export default function IngredientesCRUD() {
               )}
             </form.Field>
           </div>
+          {/* Allergen toggle checkbox — default true for new ingredients */}
           <div className="flex items-center gap-2">
             <form.Field name="es_alergeno">
               {(field) => (
                 <>
-                  <label className="text-sm font-medium">¿Es alérgeno?</label>
+                  <label className="text-sm font-medium">Es alergeno?</label>
                   <input type="checkbox" checked={field.state.value ?? true}
                     onChange={(e) => field.handleChange(e.target.checked)} />
                 </>
@@ -280,12 +310,13 @@ export default function IngredientesCRUD() {
             className="bg-gray-400 text-white px-4 py-1 rounded cursor-pointer">Cancelar</button>
         </form>
       )}
+      {/* Data table with inline stock/price editing */}
       {state.loading ? <p>Cargando...</p> : (
         <table className="w-full border-collapse border">
           <thead><tr className="bg-gray-200">
             <th className="border p-2 text-left">ID</th>
             <th className="border p-2 text-left">Nombre</th>
-            <th className="border p-2 text-left">Alérgeno</th>
+            <th className="border p-2 text-left">Alergeno</th>
             <th className="border p-2 text-left">Precio</th>
             <th className="border p-2 text-left">Stock</th>
             <th className="border p-2 text-left">Acciones</th>
@@ -295,8 +326,9 @@ export default function IngredientesCRUD() {
               <tr key={ing.id} className="hover:bg-gray-100">
                 <td className="border p-2">{ing.id}</td>
                 <td className="border p-2">{ing.nombre}</td>
-                <td className="border p-2">{ing.es_alergeno ? "Sí" : "No"}</td>
+                <td className="border p-2">{ing.es_alergeno ? "Si" : "No"}</td>
                 <td className="border p-2">
+                  {/* Inline price editing: clicking "Precio" button replaces cell with input */}
                   {state.inlinePrecioEdit?.id === ing.id ? (
                     <div className="flex gap-1 items-center">
                       <input type="number" step="0.01" min="0"
@@ -306,13 +338,14 @@ export default function IngredientesCRUD() {
                       <button onClick={() => handleInlinePrecioSave(ing.id)}
                         className="bg-green-600 text-white px-2 py-0.5 rounded text-xs cursor-pointer">Guardar</button>
                       <button onClick={() => dispatch({ type: "CANCEL_INLINE_PRECIO" })}
-                        className="bg-gray-400 text-white px-2 py-0.5 rounded text-xs cursor-pointer">✕</button>
+                        className="bg-gray-400 text-white px-2 py-0.5 rounded text-xs cursor-pointer">X</button>
                     </div>
                   ) : (
                     `$${Number(ing.precio_actual).toFixed(2)}`
                   )}
                 </td>
                 <td className="border p-2">
+                  {/* Inline stock editing: clicking "Stock" button replaces cell with input */}
                   {state.inlineStockEdit?.id === ing.id ? (
                     <div className="flex gap-1 items-center">
                       <input type="number" step="1" min="0"
@@ -322,7 +355,7 @@ export default function IngredientesCRUD() {
                       <button onClick={() => handleInlineStockSave(ing.id)}
                         className="bg-green-600 text-white px-2 py-0.5 rounded text-xs cursor-pointer">Guardar</button>
                       <button onClick={() => dispatch({ type: "CANCEL_INLINE_STOCK" })}
-                        className="bg-gray-400 text-white px-2 py-0.5 rounded text-xs cursor-pointer">✕</button>
+                        className="bg-gray-400 text-white px-2 py-0.5 rounded text-xs cursor-pointer">X</button>
                     </div>
                   ) : (
                     ing.stock_actual
@@ -346,14 +379,15 @@ export default function IngredientesCRUD() {
           </tbody>
         </table>
       )}
+      {/* Pagination controls */}
       <div className="flex gap-2 mt-4 items-center">
         <button disabled={state.page === 0}
           onClick={() => dispatch({ type: "SET_PAGE", payload: state.page - 1 })}
-          className="bg-gray-300 px-3 py-1 rounded disabled:opacity-50 cursor-pointer">← Anterior</button>
-        <span>Página {state.page + 1}</span>
+          className="bg-gray-300 px-3 py-1 rounded disabled:opacity-50 cursor-pointer">Anterior</button>
+        <span>Pagina {state.page + 1}</span>
         <button disabled={state.items.length < PAGE_SIZE}
           onClick={() => dispatch({ type: "SET_PAGE", payload: state.page + 1 })}
-          className="bg-gray-300 px-3 py-1 rounded disabled:opacity-50 cursor-pointer">Siguiente →</button>
+          className="bg-gray-300 px-3 py-1 rounded disabled:opacity-50 cursor-pointer">Siguiente</button>
       </div>
     </div>
   );

@@ -1,14 +1,26 @@
+"""
+Unit of Work for the VentasPagosTrazabilidad module.
+
+Provides a transactional boundary around all order-related repositories.
+Pure persistence coordination — no business logic or domain operations.
+State transitions (avanzar_estado) are managed by PedidoService.
+"""
 from sqlmodel import Session
 from .EstadoPedido.repository import EstadoPedidoRepository
 from .FormaPago.repository import FormaPagoRepository
 from .Pedido.repository import PedidoRepository
 from .DetallePedido.repository import DetallePedidoRepository
 from .HistorialEstadoPedido.repository import HistorialEstadoPedidoRepository
-from .HistorialEstadoPedido.models import HistorialEstadoPedido
 from .Pago.repository import PagoRepository
 
 
 class VentasPagosTrazabilidadUnitOfWork:
+    """Unit of Work for the Sales/Payments module.
+
+    Provides repositories and transaction management only.
+    Domain coordination (e.g., state transitions) lives in the services.
+    """
+
     def __init__(self, session: Session):
         self.session = session
         self.estados = EstadoPedidoRepository(session)
@@ -40,37 +52,14 @@ class VentasPagosTrazabilidadUnitOfWork:
         return entity
 
     def flush(self):
-        """Flush pending changes to DB (to get IDs without committing)."""
+        """Flush pending changes to DB to obtain generated IDs without committing."""
         self.session.flush()
 
     def refresh(self, entity):
-        """Reload entity from DB after flush/commit."""
+        """Reload entity from DB after flush/commit to get latest values."""
         self.session.refresh(entity)
         return entity
 
     def delete(self, entity):
         """Mark an entity for deletion on next flush/commit."""
         self.session.delete(entity)
-
-    def avanzar_estado(self, pedido, estado_anterior, estado_siguiente, usuario_id=None, motivo=None):
-        """Transición atómica de estado: UPDATE Pedido + INSERT HistorialEstadoPedido.
-
-        - estado_anterior=None → creación del pedido (estado semilla)
-        - usuario_id=None → actor es el sistema (webhook)
-
-        commit() se delega a __exit__ del context manager.
-        """
-        # INSERT historial (APPEND ONLY)
-        self.session.add(HistorialEstadoPedido(
-            pedido_id=pedido.id,
-            estado_desde=estado_anterior,   # None = creación
-            estado_hacia=estado_siguiente,
-            usuario_id=usuario_id,           # None = sistema
-            motivo=motivo,
-        ))
-
-        # UPDATE pedido
-        pedido.estado_codigo = estado_siguiente
-        self.pedidos.add(pedido)
-
-        return pedido

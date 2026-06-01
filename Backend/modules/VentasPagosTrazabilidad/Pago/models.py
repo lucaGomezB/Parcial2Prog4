@@ -1,3 +1,15 @@
+"""
+Pago models — Payment entity for order payment tracking.
+
+Each payment is linked to an order and stores MercadoPago integration fields:
+    - mp_payment_id: MercadoPago's internal payment ID
+    - mp_status: payment status from MP (approved, pending, rejected, etc.)
+    - mp_status_detail: detailed status description from MP
+    - external_reference: unique reference sent to MP (links back to this record)
+    - idempotency_key: ensures webhook processing is idempotent (no double-charge)
+    - transaction_amount: the amount charged
+    - payment_method_id: the specific MP payment method used (credit card, etc.)
+"""
 from decimal import Decimal
 from typing import Optional, TYPE_CHECKING
 from sqlmodel import SQLModel, Field, Relationship, Column
@@ -9,6 +21,12 @@ if TYPE_CHECKING:
 
 
 class Pago(TimestampModel, table=True):
+    """Payment record linked to an order. Maps to 'pago' table.
+
+    Includes MercadoPago integration fields for payment lifecycle tracking.
+    The idempotency_key ensures webhook events aren't processed twice.
+    """
+
     __tablename__ = "pago"
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -21,5 +39,5 @@ class Pago(TimestampModel, table=True):
     transaction_amount: Decimal = Field(sa_column=Column(Numeric(precision=10, scale=2), nullable=False))
     payment_method_id: Optional[str] = Field(default=None, max_length=50)
 
-    # Relationship
+    # Relationship back to parent order
     pedido: "Pedido" = Relationship(back_populates="pagos")

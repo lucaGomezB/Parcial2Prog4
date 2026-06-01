@@ -10,12 +10,19 @@ import {
   minLength,
 } from "../hooks/useAppForm";
 
+/**
+ * Response shape from the backend auth endpoints (login/register).
+ * Token is stored in localStorage via setToken() for subsequent API calls.
+ */
 interface LoginResponse {
   access_token: string;
   token_type: string;
   expires_in: number;
 }
 
+/**
+ * Minimal user info returned by GET /auth/me after successful auth.
+ */
 interface UserInfo {
   id: number;
   nombre: string;
@@ -25,8 +32,10 @@ interface UserInfo {
   roles: string[];
 }
 
+/** Discriminated union to toggle between login and register modes. */
 type Modo = "login" | "register";
 
+/** All form fields for both login and register modes. */
 type LoginFormValues = {
   email: string;
   password: string;
@@ -36,6 +45,18 @@ type LoginFormValues = {
   celular: string;
 };
 
+/**
+ * LoginConceptual — Authentication page with login, register, and guest access.
+ *
+ * Manages two modes via a tab-like UI:
+ *   - "login":    email + password only
+ *   - "register": full form (nombre, apellido, celular, email, password, confirm)
+ *
+ * On success, stores the token via setToken() and fetches user info from /auth/me.
+ * On failure, displays error messages parsed from the backend or network errors.
+ *
+ * @param onLogin - Optional callback invoked after successful authentication.
+ */
 export default function Login({ onLogin }: { onLogin?: () => void }) {
   const [modo, setModo] = useState<Modo>("login");
   const [showPassword, setShowPassword] = useState(false);
@@ -43,7 +64,13 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  // ── Obtener user info después de login/register ──
+  /**
+   * Finalises authentication flow:
+   *   1. Fetch the authenticated user's info from /auth/me.
+   *   2. Persist it to the client-side store via setUserInfo().
+   *   3. Invoke the parent's onLogin callback (if provided).
+   *   4. Redirect to the home page.
+   */
   const finalizarAuth = async () => {
     const userInfo = await apiFetch<UserInfo>("/auth/me");
     setUserInfo(userInfo);
@@ -51,6 +78,18 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
     navigate("/");
   };
 
+  /**
+   * TanStack Form instance for the login/register form.
+   *
+   * On submit:
+   *   - login mode:  POST /auth/login with email + password -> store token -> finalize
+   *   - register mode:  validates password match, POST /auth/register -> store token -> finalize
+   *
+   * Error handling covers:
+   *   - Network failure (TypeError "Failed to fetch"): backend not running.
+   *   - Backend validation errors (response.detail).
+   *   - Generic fallback messages.
+   */
   const form = useAppForm<LoginFormValues>({
     defaultValues: {
       email: "",
@@ -74,6 +113,7 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
           setToken(response.access_token, response.expires_in);
           await finalizarAuth();
         } else {
+          // Client-side password confirmation check before hitting the backend
           if (value.password !== value.confirmPassword) {
             setError("Las contraseñas no coinciden");
             return;
@@ -85,6 +125,7 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
               nombre: value.nombre.trim(),
               apellido: value.apellido.trim(),
               email: value.email.trim(),
+              // Send null instead of empty string to keep the field absent on the backend
               celular: value.celular.trim() || null,
               password: value.password,
             }),
@@ -96,6 +137,7 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
       } catch (err: unknown) {
         console.error("Auth error:", err);
 
+        // Distinguish network-level failures from logical API errors
         if (err instanceof TypeError && err.message === "Failed to fetch") {
           setError(
             modo === "login"
@@ -103,6 +145,7 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
               : "No se puede conectar con el servidor."
           );
         } else if (err instanceof Error && err.message) {
+          // Backend usually wraps errors in a "detail" field (FastAPI convention)
           const axiosErr = err as unknown as { response?: { data?: Record<string, unknown> } };
           const responseData = axiosErr?.response?.data;
           if (responseData?.detail) {
@@ -127,21 +170,31 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
     },
   });
 
+  /**
+   * Guest login — sets an empty roles array so the app treats the user as
+   * unauthenticated client, then navigates to the product listing.
+   */
   const handleGuestLogin = () => {
     useAuthStore.getState().setRoles([]);
     navigate("/productos");
   };
 
+  /** Switch to login tab and clear any previous errors. */
   const irALogin = () => {
     setModo("login");
     setError("");
   };
 
+  /** Switch to register tab and clear any previous errors. */
   const irARegister = () => {
     setModo("register");
     setError("");
   };
 
+  /**
+   * Toggles between login and register modes.
+   * Used by the hyperlink-style button below the form.
+   */
   const cambiarModo = () => {
     setModo(modo === "login" ? "register" : "login");
     setError("");
@@ -150,7 +203,7 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <div className="bg-white p-8 rounded-lg shadow-md w-96">
-        {/* ── Tabs: Login | Register ── */}
+        {/* Tab navigation: two buttons that switch between login and register modes. */}
         <div className="flex mb-6 border-b border-gray-200">
           <button
             onClick={irALogin}
@@ -160,7 +213,7 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
                 : "text-gray-500 hover:text-gray-700"
             }`}
           >
-            Iniciar Sesión
+            Iniciar Sesion
           </button>
           <button
             onClick={irARegister}
@@ -175,9 +228,10 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
         </div>
 
         <h1 className="text-xl font-bold mb-4 text-center text-gray-800">
-          {modo === "login" ? "Iniciar Sesión" : "Crear Cuenta"}
+          {modo === "login" ? "Iniciar Sesion" : "Crear Cuenta"}
         </h1>
 
+        {/* Error banner — shown when auth fails (network, validation, or credentials) */}
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded mb-4 text-sm text-center">
             {error}
@@ -192,7 +246,7 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
           }}
           className="flex flex-col gap-4"
         >
-          {/* ── Campos específicos de registro ── */}
+          {/* Registration-only fields: nombre, apellido, celular */}
           {modo === "register" && (
             <>
               <div className="flex gap-3">
@@ -260,6 +314,7 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
             </>
           )}
 
+          {/* Email field — required in both login and register modes */}
           <form.Field
             name="email"
             validators={{ onChange: composeValidators(required(), email()) }}
@@ -283,20 +338,21 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
             )}
           </form.Field>
 
+          {/* Password field with show/hide toggle icon */}
           <form.Field
             name="password"
             validators={{ onChange: composeValidators(required(), minLength(6)) }}
           >
             {(field) => (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contrasena</label>
                 <div className="relative">
                   <input
                     type={showPassword ? "text" : "password"}
                     value={field.state.value}
                     onChange={(e) => field.handleChange(e.target.value)}
                     onBlur={field.handleBlur}
-                    placeholder="••••••••"
+                    placeholder="********"
                     className="w-full border border-gray-300 px-3 py-2 pr-10 rounded focus:outline-none focus:border-blue-500"
                     disabled={isLoading}
                   />
@@ -308,10 +364,12 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
                     tabIndex={-1}
                   >
                     {showPassword ? (
+                      // Eye-off icon when password is visible
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
                       </svg>
                     ) : (
+                      // Eye icon when password is hidden
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -326,7 +384,7 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
             )}
           </form.Field>
 
-          {/* ── Confirmar contraseña (solo registro) ── */}
+          {/* Password confirmation — only shown in register mode */}
           {modo === "register" && (
             <form.Field
               name="confirmPassword"
@@ -334,7 +392,7 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
             >
               {(field) => (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar contraseña</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar contrasena</label>
                   <input
                     type="password"
                     value={field.state.value}
@@ -362,7 +420,7 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
           </button>
         </form>
 
-        {/* ── Invitado + toggle ── */}
+        {/* Guest / toggle section — divider with guest button (login) or "already have account" link (register) */}
         <div className="mt-6 text-center space-y-3">
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
@@ -370,7 +428,7 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
             </div>
             <div className="relative flex justify-center text-sm">
               <span className="px-2 bg-white text-gray-500">
-                {modo === "login" ? "O ingresar como invitado" : "¿Ya tenés cuenta?"}
+                {modo === "login" ? "O ingresar como invitado" : "Ya tenes cuenta?"}
               </span>
             </div>
           </div>
@@ -379,14 +437,14 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
               onClick={handleGuestLogin}
               className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-2 px-4 border border-gray-300 rounded transition-colors cursor-pointer"
             >
-              Ver Menú (Invitado)
+              Ver Menu (Invitado)
             </button>
           ) : (
             <button
               onClick={cambiarModo}
               className="w-full text-blue-600 hover:text-blue-800 font-medium py-2 px-4 transition-colors cursor-pointer"
             >
-              Iniciar sesión
+              Iniciar sesion
             </button>
           )}
         </div>

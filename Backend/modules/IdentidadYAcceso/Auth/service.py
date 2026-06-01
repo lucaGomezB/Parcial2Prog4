@@ -1,36 +1,42 @@
-import bcrypt
+"""
+Authentication service module.
+
+Implements core authentication logic:
+
+- Password verification via core.security (bcrypt constant-time comparison).
+- Access token creation via core.security (short-lived JWT signed with HS256).
+- Refresh token creation (opaque token, SHA-256 hash stored in DB).
+- Refresh token validation (hash lookup, expiry and revocation checks).
+- Refresh token revocation (soft-delete for logout and rotation).
+- Expired token cleanup (hard-delete for garbage collection).
+
+Token rotation strategy: each refresh operation revokes the previous
+refresh token and issues a new one, preventing token reuse in case
+of theft.
+"""
+
 import hashlib
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
-import jwt
 from sqlmodel import Session, select
+from core.security import verify_password, create_access_token
+
 from modules.IdentidadYAcceso.Usuario.models import Usuario
 from modules.IdentidadYAcceso.RefreshToken.models import RefreshToken
 from ..uow import IdentidadYAccesoUnitOfWork
 from models.base import get_utc_now
-from .config import settings
-from .schemas import TokenData
-
-
-def verify_password(plain: str, hashed: str) -> bool:
-    """Verifica la contraseña contra el hash bcrypt."""
-    try:
-        return bcrypt.checkpw(plain.encode('utf-8'), hashed.encode('utf-8'))
-    except Exception:
-        return False
-
-
-def create_access_token(data: TokenData, expires_delta: timedelta | None = None) -> str:
-    """Crea un token JWT con los datos del usuario."""
-    to_encode = data.model_dump()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire, "iat": datetime.utcnow()})
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def authenticate_user(session: Session, email: str, password: str) -> Usuario | None:
-    """Autentica un usuario con email y password."""
+    """
+    Authenticate a user by email and password.
+
+    Returns the Usuario object on success, None on failure.
+    Always returns the same error (None) regardless of whether the
+    email does not exist or the password is wrong, to prevent
+    user enumeration attacks.
+    """
     stmt = select(Usuario).where(Usuario.email == email)
     user = session.exec(stmt).first()
 
@@ -44,7 +50,15 @@ def authenticate_user(session: Session, email: str, password: str) -> Usuario | 
 
 
 def create_refresh_token(session: Session, usuario_id: int) -> str:
-    """Genera un refresh token, almacena su hash en DB y devuelve el raw token."""
+    """
+    Generate a new refresh token and store its SHA-256 hash in the database.
+
+    The raw token (64-char hex string) is returned to the caller for
+    placement in an httpOnly cookie. Only the hash is persisted,
+    ensuring that database compromise does not expose valid tokens.
+
+    The token expires after 7 days (configurable via REFRESH_TOKEN_EXPIRE_DAYS).
+    """
     token_bytes = secrets.token_bytes(32)
     raw_token = token_bytes.hex()
     token_hash = hashlib.sha256(token_bytes).hexdigest()
@@ -60,21 +74,33 @@ def create_refresh_token(session: Session, usuario_id: int) -> str:
             created_at=now,
         )
         uow.refresh_tokens.add(db_token)
-        # No necesita refresh(): el UoW commitea al salir del with,
-        # y solo retornamos raw_token, no db_token.
 
     return raw_token
 
 
 def validate_refresh_token(session: Session, raw_token: str) -> Optional[RefreshToken]:
-    """Valida un refresh token: busca por hash, que no esté revocado y no haya expirado."""
+    """
+    Validate a refresh token by its SHA-256 hash.
+
+    Looks up the hash in the database and verifies the token is
+    neither expired nor revoked. Returns the RefreshToken object
+    if valid, None otherwise.
+    """
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
     with IdentidadYAccesoUnitOfWork(session) as uow:
         return uow.refresh_tokens.get_by_hash(token_hash)
 
 
 def revoke_refresh_token(session: Session, raw_token: str) -> bool:
-    """Revoca un refresh token (setea revoked_at). Retorna True si se revocó, False si no se encontró."""
+    """
+    Revoke a refresh token by setting its revoked_at timestamp.
+
+    Used for:
+    - Logout (explicit session termination).
+    - Token rotation (old token revoked when new one is issued).
+
+    Returns True if the token was found and revoked, False otherwise.
+    """
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
     with IdentidadYAccesoUnitOfWork(session) as uow:
         stored = uow.refresh_tokens.get_by_hash(token_hash)
@@ -86,7 +112,13 @@ def revoke_refresh_token(session: Session, raw_token: str) -> bool:
 
 
 def cleanup_expired_tokens(session: Session):
-    """Elimina todos los refresh tokens expirados de la BD."""
+    """
+    Permanently delete all expired refresh tokens from the database.
+
+    Unlike revoke (soft), this performs hard deletion for garbage
+    collection. Called automatically on application startup and can
+    be scheduled as a periodic maintenance task.
+    """
     with IdentidadYAccesoUnitOfWork(session) as uow:
         expired = uow.refresh_tokens.get_expired()
         for token in expired:

@@ -1,3 +1,10 @@
+"""
+Pydantic schemas for DireccionEntrega (Delivery Address) endpoints.
+
+Defines request and response models for creating, updating, and
+reading delivery addresses.
+"""
+
 from decimal import Decimal
 from typing import Optional
 from datetime import datetime
@@ -5,6 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class DireccionEntregaCreate(BaseModel):
+    """Request schema for creating a new delivery address."""
     alias: Optional[str] = None
     linea1: str
     linea2: Optional[str] = None
@@ -17,6 +25,7 @@ class DireccionEntregaCreate(BaseModel):
 
 
 class DireccionEntregaUpdate(BaseModel):
+    """Request schema for updating a delivery address. All fields optional (PATCH)."""
     alias: Optional[str] = None
     linea1: Optional[str] = None
     linea2: Optional[str] = None
@@ -28,6 +37,7 @@ class DireccionEntregaUpdate(BaseModel):
 
 
 class DireccionEntregaRead(BaseModel):
+    """Response schema for delivery address data."""
     id: int
     usuario_id: int
     alias: Optional[str] = None

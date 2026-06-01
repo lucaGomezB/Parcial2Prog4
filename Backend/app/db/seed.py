@@ -1,9 +1,18 @@
 """
-seed.py — Seed de datos para el backend.
-Corre en el startup (lifespan de main.py) y también es invocable como script.
+Database seeding module.
 
-Idempotente: si un registro ya existe, lo saltea.
+Populates the database with initial reference data required for the
+application to function: roles, admin users, product categories,
+ingredients, products, order states, and payment methods.
+
+Runs automatically during application startup (via the lifespan hook
+in main.py), and is also invocable directly as a standalone script.
+
+Idempotent: all seed functions check for existing records before
+inserting, so it is safe to run multiple times without creating
+duplicates.
 """
+
 import os
 from decimal import Decimal
 from dotenv import load_dotenv
@@ -13,12 +22,12 @@ from sqlmodel import SQLModel, create_engine, Session, select
 from modules.IdentidadYAcceso.Rol.models import Rol
 from modules.IdentidadYAcceso.Usuario.models import Usuario
 from modules.IdentidadYAcceso.usuario_rol import UsuarioRol
-from modules.IdentidadYAcceso.Usuario.service import get_password_hash
+from core.security import get_password_hash
 
-# ── Direcciones ──
+# ── Addresses ──
 from modules.IdentidadYAcceso.DireccionEntrega.models import DireccionEntrega
 
-# ── Catálogo ──
+# ── Catalog ──
 from modules.CatalogoDeProductos.Categoria.models import Categoria
 from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
 from modules.CatalogoDeProductos.Producto.models import Producto
@@ -26,7 +35,7 @@ from modules.CatalogoDeProductos.producto_categoria import ProductoCategoria
 from modules.CatalogoDeProductos.producto_ingrediente import ProductoIngrediente
 from modules.CatalogoDeProductos.Producto.service import ProductoService
 
-# ── Ventas ──
+# ── Sales ──
 from modules.VentasPagosTrazabilidad.EstadoPedido.models import EstadoPedido
 from modules.VentasPagosTrazabilidad.FormaPago.models import FormaPago
 
@@ -35,9 +44,12 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 # ═══════════════════════════════════════════════════════════════
-#  DATA
+#  SEED DATA DEFINITIONS
 # ═══════════════════════════════════════════════════════════════
 
+# Four system roles covering the main access levels:
+# ADMIN (full access), STOCK (inventory management),
+# PEDIDOS (order management), CLIENT (self-service only)
 ROLES_SEED = [
     Rol(codigo="ADMIN",   nombre="Administrador", descripcion="Acceso total sin restricciones"),
     Rol(codigo="STOCK",   nombre="Stock",         descripcion="Actualiza stock y disponibilidad"),
@@ -45,6 +57,7 @@ ROLES_SEED = [
     Rol(codigo="CLIENT",  nombre="Cliente",       descripcion="Opera solo con sus propios datos"),
 ]
 
+# One user per role for initial testing and development
 USERS_SEED = [
     {"nombre": "Admin",   "apellido": "Sistema",  "email": "admin@email.com",   "password": "admin123",   "rol_codigo": "ADMIN"},
     {"nombre": "Stock",   "apellido": "Sistema",  "email": "stock@email.com",   "password": "stock123",   "rol_codigo": "STOCK"},
@@ -52,6 +65,7 @@ USERS_SEED = [
     {"nombre": "Cliente", "apellido": "Estandar", "email": "client@email.com",  "password": "client123",  "rol_codigo": "CLIENT"},
 ]
 
+# Default delivery addresses for each seed user
 DIRECCIONES_SEED = [
     {"email": "admin@email.com",   "alias": "Principal", "linea1": "Av. Siempre Viva 123",      "ciudad": "Mendoza",   "es_principal": True},
     {"email": "stock@email.com",   "alias": "Principal", "linea1": "Calle falsa 456",            "ciudad": "Mendoza",   "es_principal": True},
@@ -59,8 +73,9 @@ DIRECCIONES_SEED = [
     {"email": "client@email.com",  "alias": "Principal", "linea1": "Av. Festa 1233",             "ciudad": "Mendoza",   "es_principal": True},
 ]
 
+# Hierarchical product categories with display ordering.
+# parent_none = top-level category, named parent links subcategories.
 CATEGORIAS_SEED = [
-    # (nombre, descripción, nombre_del_padre, orden_display)
     ("Bebidas",             "Todas las bebidas",             None,             1),
     ("Bebidas Frías",       "Gaseosas, jugos, aguas",        "Bebidas",        1),
     ("Bebidas Calientes",   "Café, té, chocolate",           "Bebidas",        2),
@@ -73,63 +88,84 @@ CATEGORIAS_SEED = [
     ("Tartas",              "Tartas dulces y saladas",       None,             6),
 ]
 
+# Ingredients with stock levels, prices, and allergen flags.
+# es_alergeno=True means this ingredient is a common allergen.
 INGREDIENTES_SEED = [
-    # (nombre, es_alergeno, precio_actual, stock_actual)
-    ("Pan de hamburguesa",  False, Decimal("50"),   500),
-    ("Pan de miga",         False, Decimal("60"),   300),
-    ("Pan ciabatta",        False, Decimal("80"),   200),
-    ("Carne de res",        False, Decimal("200"),  200),
-    ("Pechuga de pollo",    False, Decimal("180"),  250),
-    ("Queso cheddar",       True,  Decimal("80"),   300),
-    ("Queso mozzarella",    True,  Decimal("90"),   250),
-    ("Lechuga",             False, Decimal("30"),   150),
-    ("Tomate",              False, Decimal("25"),   180),
-    ("Cebolla",             False, Decimal("20"),   200),
-    ("Huevo",               True,  Decimal("15"),   500),
-    ("Mayonesa",            True,  Decimal("40"),   200),
-    ("Mostaza",             False, Decimal("35"),   150),
-    ("Ketchup",             False, Decimal("30"),   200),
-    ("Papa",                False, Decimal("45"),   300),
-    ("Aceite",              False, Decimal("60"),   200),
-    ("Sal",                 False, Decimal("10"),   500),
-    ("Café molido",         False, Decimal("150"),  100),
-    ("Leche",               True,  Decimal("70"),   200),
-    ("Crema de leche",      True,  Decimal("90"),   150),
-    ("Chocolate",           True,  Decimal("120"),  100),
-    ("Harina de trigo",     True,  Decimal("40"),   400),
-    ("Azúcar",              False, Decimal("35"),   300),
-    ("Hielo",               False, Decimal("5"),    1000),
-    ("Gasificación",        False, Decimal("10"),   500),
-    ("Agua",                False, Decimal("5"),    1000),
-    ("Levadura",            False, Decimal("25"),   200),
-    ("Manteca",             True,  Decimal("80"),   150),
-    ("Dulce de leche",      True,  Decimal("110"),  100),
-    ("Vainilla",            False, Decimal("200"),  50),
+    ("Pan de Hamburguesa x und",     False, Decimal("50"),   500),
+    ("Pan de Miga x und",           False, Decimal("60"),   300),
+    ("Pan Ciabatta x und",          False, Decimal("80"),   200),
+    ("Medallón de Carne Res x und", False, Decimal("200"),  200),
+    ("Pechuga de Pollo x kg",       False, Decimal("1800"), 50),
+    ("Queso Cheddar x kg",          True,  Decimal("800"),  30),
+    ("Queso Mozzarella x kg",       True,  Decimal("900"),  25),
+    ("Lechuga x und",               False, Decimal("30"),   150),
+    ("Tomate x kg",                 False, Decimal("250"),  18),
+    ("Cebolla x kg",                False, Decimal("200"),  20),
+    ("Huevo x docena",              True,  Decimal("180"),  50),
+    ("Mayonesa x 1 lt",             True,  Decimal("400"),  20),
+    ("Mostaza x 1 lt",              False, Decimal("350"),  15),
+    ("Ketchup x 1 lt",              False, Decimal("300"),  20),
+    ("Papa x kg",                   False, Decimal("450"),  60),
+    ("Aceite Girasol x 1 lt",       False, Decimal("600"),  20),
+    ("Sal Fina x 1 kg",             False, Decimal("100"),  20),
+    ("Café Molido x 1/2 kg",        False, Decimal("1500"), 10),
+    ("Cartón de Leche Entera 1 lt", True,  Decimal("700"),  30),
+    ("Crema de Leche x 1 lt",       True,  Decimal("900"),  15),
+    ("Chocolate cobertura x kg",    True,  Decimal("1200"), 10),
+    ("Paquete de Harina 0000 1 kg", True,  Decimal("400"),  40),
+    ("Azúcar x kg",                 False, Decimal("350"),  30),
+    ("Agua mineral x 1 lt",         False, Decimal("50"),   200),
+    ("Gasificación x 1 lt",         False, Decimal("100"),  50),
+    ("Levadura x 100 gr",           False, Decimal("250"),  20),
+    ("Manteca x 200 gr",            True,  Decimal("800"),  15),
+    ("Dulce de Leche x 1 kg",       True,  Decimal("1100"), 10),
+    ("Esencia de Vainilla x 50 ml", False, Decimal("200"),  20),
+    ("Hielo x bolsa 2 kg",          False, Decimal("50"),   100),
+    ("Jamón Cocido x kg",           False, Decimal("1200"), 15),
 ]
 
+# Products with their category assignments and ingredient compositions.
+# Products with ingredients get their precio_base recalculated from
+# ingredient costs via ProductoService._recalcular_precio_producto().
 PRODUCTOS_SEED = [
-    # (nombre, descripción, precio, tiempo_min, disponible,
-    #   categorias=[(nombre_cat, es_principal)],
-    #   ingredientes=[(nombre_ing, es_removible, es_principal, orden, cantidad)])
+    # ── Beverages (resold, no ingredient composition) ──
     dict(
         nombre="Coca Cola 500ml",
-        descripcion="Gaseosa sabor cola",
+        descripcion="Gaseosa sabor cola 500ml",
         precio=Decimal("1200.00"), tiempo=1, disponible=True, stock_cantidad=200,
         categorias=[("Bebidas Frías", True)],
-        ingredientes=[
-            ("Agua", False, False, 1, Decimal("0.5")),
-            ("Gasificación", False, False, 2, Decimal("0.1")),
-            ("Azúcar", False, False, 3, Decimal("0.2")),
-        ],
+        ingredientes=[],
     ),
+    dict(
+        nombre="Coca Cola 1L",
+        descripcion="Gaseosa sabor cola 1 litro",
+        precio=Decimal("1800.00"), tiempo=1, disponible=True, stock_cantidad=150,
+        categorias=[("Bebidas Frías", True)],
+        ingredientes=[],
+    ),
+    dict(
+        nombre="Coca Cola 2L",
+        descripcion="Gaseosa sabor cola 2 litros",
+        precio=Decimal("2500.00"), tiempo=1, disponible=True, stock_cantidad=100,
+        categorias=[("Bebidas Frías", True)],
+        ingredientes=[],
+    ),
+    dict(
+        nombre="Agua Mineral 500ml",
+        descripcion="Agua mineral sin gas 500ml",
+        precio=Decimal("600.00"), tiempo=1, disponible=True, stock_cantidad=300,
+        categorias=[("Bebidas Frías", True)],
+        ingredientes=[],
+    ),
+    # ── Made-to-order products (with ingredient recipes) ──
     dict(
         nombre="Café con Leche",
         descripcion="Café expreso con leche cremada",
         precio=Decimal("1500.00"), tiempo=5, disponible=True, stock_cantidad=150,
         categorias=[("Bebidas Calientes", True)],
         ingredientes=[
-            ("Café molido", False, True, 1, Decimal("0.05")),
-            ("Leche", True, False, 2, Decimal("0.2")),
+            ("Café Molido x 1/2 kg", False, True, 1, 1),
+            ("Cartón de Leche Entera 1 lt", True, False, 2, 1),
         ],
     ),
     dict(
@@ -138,11 +174,11 @@ PRODUCTOS_SEED = [
         precio=Decimal("4500.00"), tiempo=12, disponible=True, stock_cantidad=100,
         categorias=[("Sandwichs Calientes", True)],
         ingredientes=[
-            ("Pan de hamburguesa", False, False, 1, Decimal("1")),
-            ("Carne de res", False, True, 2, Decimal("1")),
-            ("Queso cheddar", True, False, 3, Decimal("2")),
-            ("Lechuga", True, False, 4, Decimal("0.5")),
-            ("Tomate", True, False, 5, Decimal("0.5")),
+            ("Pan de Hamburguesa x und", False, False, 1, 1),
+            ("Medallón de Carne Res x und", False, True, 2, 1),
+            ("Queso Cheddar x kg", True, False, 3, 1),
+            ("Lechuga x und", True, False, 4, 1),
+            ("Tomate x kg", True, False, 5, 1),
         ],
     ),
     dict(
@@ -151,9 +187,10 @@ PRODUCTOS_SEED = [
         precio=Decimal("2800.00"), tiempo=5, disponible=True, stock_cantidad=80,
         categorias=[("Sandwichs Fríos", True)],
         ingredientes=[
-            ("Pan de miga", False, False, 1, Decimal("2")),
-            ("Queso mozzarella", False, True, 2, Decimal("0.15")),
-            ("Mayonesa", True, False, 3, Decimal("0.05")),
+            ("Pan de Miga x und", False, False, 1, 2),
+            ("Queso Mozzarella x kg", False, True, 2, 1),
+            ("Mayonesa x 1 lt", True, False, 3, 1),
+            ("Jamón Cocido x kg", False, False, 4, 1),
         ],
     ),
     dict(
@@ -162,9 +199,9 @@ PRODUCTOS_SEED = [
         precio=Decimal("2200.00"), tiempo=8, disponible=True, stock_cantidad=120,
         categorias=[("Guarniciones", True)],
         ingredientes=[
-            ("Papa", False, True, 1, Decimal("0.5")),
-            ("Aceite", False, False, 2, Decimal("0.1")),
-            ("Sal", False, False, 3, Decimal("0.02")),
+            ("Papa x kg", False, True, 1, 1),
+            ("Aceite Girasol x 1 lt", False, False, 2, 1),
+            ("Sal Fina x 1 kg", False, False, 3, 1),
         ],
     ),
     dict(
@@ -173,21 +210,10 @@ PRODUCTOS_SEED = [
         precio=Decimal("2500.00"), tiempo=2, disponible=True, stock_cantidad=60,
         categorias=[("Postres", True)],
         ingredientes=[
-            ("Huevo", False, True, 1, Decimal("2")),
-            ("Leche", False, False, 2, Decimal("0.25")),
-            ("Dulce de leche", True, False, 3, Decimal("0.1")),
-            ("Vainilla", False, False, 4, Decimal("0.02")),
-        ],
-    ),
-    dict(
-        nombre="Coca Cola",
-        descripcion="Gaseosa sabor cola",
-        precio=Decimal("1200.00"), tiempo=1, disponible=True, stock_cantidad=200,
-        categorias=[("Bebidas Frías", True)],
-        ingredientes=[
-            ("Agua", False, False, 1, Decimal("0.5")),
-            ("Gasificación", False, False, 2, Decimal("0.1")),
-            ("Azúcar", False, False, 3, Decimal("0.2")),
+            ("Huevo x docena", False, True, 1, 1),
+            ("Cartón de Leche Entera 1 lt", False, False, 2, 1),
+            ("Dulce de Leche x 1 kg", True, False, 3, 1),
+            ("Esencia de Vainilla x 50 ml", False, False, 4, 1),
         ],
     ),
     dict(
@@ -196,9 +222,9 @@ PRODUCTOS_SEED = [
         precio=Decimal("3000.00"), tiempo=15, disponible=True, stock_cantidad=90,
         categorias=[("Pizzas", True)],
         ingredientes=[
-            ("Harina de trigo", False, False, 1, Decimal("0.3")),
-            ("Queso mozzarella", False, True, 2, Decimal("0.2")),
-            ("Tomate", False, False, 3, Decimal("0.15")),
+            ("Paquete de Harina 0000 1 kg", False, False, 1, 1),
+            ("Queso Mozzarella x kg", False, True, 2, 1),
+            ("Tomate x kg", False, False, 3, 1),
         ],
     ),
     dict(
@@ -207,13 +233,16 @@ PRODUCTOS_SEED = [
         precio=Decimal("2500.00"), tiempo=12, disponible=True, stock_cantidad=70,
         categorias=[("Tartas", True)],
         ingredientes=[
-            ("Harina de trigo", False, True, 1, Decimal("0.3")),
-            ("Huevo", False, False, 2, Decimal("2")),
-            ("Queso mozzarella", False, False, 3, Decimal("0.15")),
+            ("Paquete de Harina 0000 1 kg", False, True, 1, 1),
+            ("Huevo x docena", False, False, 2, 1),
+            ("Queso Mozzarella x kg", False, False, 3, 1),
+            ("Jamón Cocido x kg", False, False, 4, 1),
         ],
     ),
 ]
 
+# Order lifecycle states arranged in a linear workflow.
+# es_terminal=True means this state is an endpoint (no further transitions).
 ESTADOS_PEDIDO_SEED = [
     EstadoPedido(codigo="PENDIENTE",  descripcion="Pedido creado, pago pendiente",            orden=1, es_terminal=False),
     EstadoPedido(codigo="CONFIRMADO", descripcion="Pago procesado y confirmado",              orden=2, es_terminal=False),
@@ -223,6 +252,7 @@ ESTADOS_PEDIDO_SEED = [
     EstadoPedido(codigo="CANCELADO",  descripcion="Pedido cancelado",                         orden=6, es_terminal=True),
 ]
 
+# Supported payment methods for order processing
 FORMAS_PAGO_SEED = [
     FormaPago(codigo="MERCADOPAGO",   descripcion="MercadoPago",      habilitado=True),
     FormaPago(codigo="EFECTIVO",      descripcion="Efectivo",         habilitado=True),
@@ -231,18 +261,30 @@ FORMAS_PAGO_SEED = [
 
 
 # ═══════════════════════════════════════════════════════════════
-#  HELPERS
+#  INTERNAL HELPERS
 # ═══════════════════════════════════════════════════════════════
 
 def _get_by_name(session: Session, model_cls, name: str):
+    """
+    Retrieve a record by its 'nombre' field.
+
+    Underscore prefix marks this as an internal implementation detail.
+    Assumes the model class has a 'nombre' column.
+    Returns the first match or None if not found.
+    """
     return session.exec(select(model_cls).where(model_cls.nombre == name)).first()
 
 
 # ═══════════════════════════════════════════════════════════════
-#  SEED FUNCTIONS
+#  SEED FUNCTIONS (one per entity type, all idempotent)
 # ═══════════════════════════════════════════════════════════════
 
 def seed_roles(session: Session):
+    """
+    Create predefined system roles idempotently.
+
+    Skips roles that already exist in the database (matched by codigo PK).
+    """
     for rol in ROLES_SEED:
         existing = session.exec(select(Rol).where(Rol.codigo == rol.codigo)).first()
         if not existing:
@@ -251,6 +293,13 @@ def seed_roles(session: Session):
 
 
 def seed_users(session: Session):
+    """
+    Create predefined user accounts idempotently.
+
+    Each user is created with their role assignment via the UsuarioRol
+    join table. Passwords are hashed with bcrypt before storage.
+    Skips users whose email already exists in the database.
+    """
     for user_data in USERS_SEED:
         existing = session.exec(
             select(Usuario).where(Usuario.email == user_data["email"])
@@ -267,6 +316,7 @@ def seed_users(session: Session):
         session.add(nuevo)
         session.flush()
 
+        # Assign the corresponding role via the many-to-many join table
         enlace = UsuarioRol(
             usuario_id=nuevo.id,
             rol_codigo=user_data["rol_codigo"],
@@ -276,8 +326,11 @@ def seed_users(session: Session):
 
 
 def seed_direcciones(session: Session):
-    """Crea direcciones de entrega para cada usuario.
-    Idempotente: si ya existe una dirección con la misma línea para el usuario, la saltea.
+    """
+    Create default delivery addresses for each seed user.
+
+    Idempotent: skips if an address with the same linea1 already exists
+    for that user. Assumes seed users have already been created.
     """
     for dir_data in DIRECCIONES_SEED:
         usuario = session.exec(
@@ -286,6 +339,7 @@ def seed_direcciones(session: Session):
         if not usuario:
             continue
 
+        # Skip if this user already has this address
         existing = session.exec(
             select(DireccionEntrega).where(
                 DireccionEntrega.usuario_id == usuario.id,
@@ -307,10 +361,17 @@ def seed_direcciones(session: Session):
 
 
 def seed_categorias(session: Session):
-    """Crea categorías jerárquicas (dos pasadas: crear, luego asignar padres)."""
+    """
+    Create hierarchical product categories in two passes.
+
+    First pass: create all categories (roots and children alike).
+    Second pass: assign parent_id relationships for subcategories.
+    This two-pass approach avoids FK constraint issues with circular
+    dependencies during creation.
+    """
     created: dict[str, Categoria] = {}
 
-    # Primera pasada: crear todas
+    # Pass 1: create all categories
     for nombre, desc, parent_nombre, orden in CATEGORIAS_SEED:
         existing = _get_by_name(session, Categoria, nombre)
         if existing:
@@ -323,7 +384,7 @@ def seed_categorias(session: Session):
 
     session.commit()
 
-    # Segunda pasada: asignar padres
+    # Pass 2: link subcategories to their parents
     for nombre, desc, parent_nombre, orden in CATEGORIAS_SEED:
         if parent_nombre:
             cat = created.get(nombre) or _get_by_name(session, Categoria, nombre)
@@ -336,6 +397,12 @@ def seed_categorias(session: Session):
 
 
 def seed_ingredientes(session: Session):
+    """
+    Create ingredients with stock and pricing information.
+
+    Idempotent: skips ingredients that already exist (matched by name).
+    Each ingredient tracks current stock, unit price, and allergen status.
+    """
     for nombre, alergeno, precio, stock in INGREDIENTES_SEED:
         existing = _get_by_name(session, Ingrediente, nombre)
         if existing:
@@ -352,9 +419,14 @@ def seed_ingredientes(session: Session):
 
 
 def seed_productos(session: Session):
-    """Crea productos con relaciones a categorías e ingredientes.
-    Idempotente: si el producto ya existe, lo saltea.
-    Luego recalcula precio_base desde los ingredientes usando ProductoService.
+    """
+    Create products with their category and ingredient relationships.
+
+    For products with ingredients, the base price is recalculated from
+    the sum of ingredient costs using ProductoService. Products without
+    ingredients (resold items) use the price provided in the seed data.
+
+    Idempotent: skips products that already exist (matched by name).
     """
     for prod_data in PRODUCTOS_SEED:
         existing = _get_by_name(session, Producto, prod_data["nombre"])
@@ -362,6 +434,7 @@ def seed_productos(session: Session):
             continue
 
         stock_cantidad = prod_data["stock_cantidad"]
+        # A product is only available if it has stock
         disponible = prod_data["disponible"] and stock_cantidad > 0
 
         producto = Producto(
@@ -375,7 +448,7 @@ def seed_productos(session: Session):
         session.add(producto)
         session.flush()
 
-        # Asignar categorías
+        # Assign product to categories
         for cat_nombre, es_principal in prod_data["categorias"]:
             cat = _get_by_name(session, Categoria, cat_nombre)
             if cat:
@@ -385,7 +458,7 @@ def seed_productos(session: Session):
                     es_principal=es_principal,
                 ))
 
-        # Asignar ingredientes
+        # Assign ingredients to the product recipe
         for ing_nombre, removible, principal, orden, cantidad in prod_data["ingredientes"]:
             ing = _get_by_name(session, Ingrediente, ing_nombre)
             if ing:
@@ -398,13 +471,20 @@ def seed_productos(session: Session):
                     cantidad=cantidad,
                 ))
 
-        # Recalcular precio_base desde los ingredientes
-        ProductoService._recalcular_precio_producto(session, producto.id)
+        # Recalculate base price from ingredient costs if applicable
+        if prod_data["ingredientes"]:
+            ProductoService._recalcular_precio_producto(session, producto.id)
 
     session.commit()
 
 
 def seed_estados_pedido(session: Session):
+    """
+    Create order lifecycle states idempotently.
+
+    Each state has a codigo PK, display name, sequential ordering,
+    and a flag indicating whether it is a terminal (final) state.
+    """
     for estado in ESTADOS_PEDIDO_SEED:
         existing = session.exec(
             select(EstadoPedido).where(EstadoPedido.codigo == estado.codigo)
@@ -415,6 +495,12 @@ def seed_estados_pedido(session: Session):
 
 
 def seed_formas_pago(session: Session):
+    """
+    Create supported payment methods idempotently.
+
+    Each payment method has a codigo PK, display description, and
+    a habilitado (enabled) flag for soft toggle support.
+    """
     for fp in FORMAS_PAGO_SEED:
         existing = session.exec(
             select(FormaPago).where(FormaPago.codigo == fp.codigo)
@@ -425,11 +511,18 @@ def seed_formas_pago(session: Session):
 
 
 # ═══════════════════════════════════════════════════════════════
-#  RUN
+#  MAIN SEED RUNNER
 # ═══════════════════════════════════════════════════════════════
 
 def run_seed():
-    """Run all seeds. Callable from lifespan."""
+    """
+    Execute all seed functions in dependency order.
+
+    Roles must be seeded first (FK dependency for users).
+    Users before addresses (FK dependency for direcciones).
+    Categories and ingredients before products (FK dependencies).
+    Called automatically from the application lifespan hook.
+    """
     engine = create_engine(DATABASE_URL, echo=False)
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
@@ -443,6 +536,7 @@ def run_seed():
         seed_formas_pago(session)
 
 
+# Allow running as a standalone script: `python -m app.db.seed`
 if __name__ == "__main__":
     run_seed()
     print("Seed completado.")
