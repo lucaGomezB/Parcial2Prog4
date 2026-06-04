@@ -504,18 +504,65 @@ class PedidoService:
 
     @staticmethod
     def update(session: Session, pedido_id: int, data: PedidoUpdate) -> Optional[Pedido]:
-        """Update order metadata (direccion_id, forma_pago_codigo, notas).
+        """Update order metadata and/or replace detail lines.
 
+        Allowed for any authenticated user with ADMIN/PEDIDOS role.
         Only provided fields are applied (exclude_unset=True).
-        Does NOT modify state or totals.
+        Does NOT modify state — that has a dedicated endpoint.
+
+        When `detalles` is provided:
+        - Only works on PENDIENTE orders (stock already deducted for CONFIRMADO+)
+        - ALL existing details are replaced with the new ones
+        - Subtotal and total are recalculated from the new details' subtotal_snap
         """
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
             db_pedido = uow.pedidos.get_by_id(pedido_id)
             if not db_pedido:
                 return None
+
             values = data.model_dump(exclude_unset=True)
+
+            # Handle detail replacement (only for PENDIENTE orders)
+            if 'detalles' in values:
+                if db_pedido.estado_codigo != "PENDIENTE":
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Solo se pueden modificar los detalles de pedidos en estado PENDIENTE",
+                    )
+
+                # Remove all existing details
+                stmt = select(DetallePedido).where(DetallePedido.pedido_id == pedido_id)
+                for det in session.exec(stmt).all():
+                    uow.delete(det)
+
+                # Add new details from the request
+                nuevo_subtotal = Decimal('0')
+                for det in data.detalles:
+                    line_total = det.precio_snapshot * det.cantidad
+                    nuevo_subtotal += line_total
+                    uow.add(DetallePedido(
+                        pedido_id=pedido_id,
+                        producto_id=det.producto_id,
+                        cantidad=det.cantidad,
+                        nombre_snapshot=det.nombre_snapshot,
+                        precio_snapshot=det.precio_snapshot,
+                        subtotal_snap=line_total,
+                        personalizacion=det.personalizacion,
+                    ))
+
+                # Recalculate order totals
+                db_pedido.subtotal = nuevo_subtotal
+                db_pedido.total = nuevo_subtotal - db_pedido.descuento + (db_pedido.costo_envio or Decimal('0.00'))
+                if db_pedido.total < 0:
+                    db_pedido.total = Decimal('0.00')
+
+                # Remove 'detalles' from values to avoid setattr on the field (not a column)
+                del values['detalles']
+
+            # Apply remaining metadata fields
             for key, value in values.items():
                 setattr(db_pedido, key, value)
+
             uow.add(db_pedido)
             uow.refresh(db_pedido)
             return db_pedido

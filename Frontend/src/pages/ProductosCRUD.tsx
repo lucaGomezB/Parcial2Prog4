@@ -994,6 +994,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
       stock_cantidad: 0,
       tiempo_prep_min: 0,
       disponible: true,
+      es_insumo: false,
       imagenes_url: [],
       categorias_ids: [],
       ingredientes: [],
@@ -1014,16 +1015,18 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
               precio_base: value.precio_base,
               stock_cantidad: value.stock_cantidad,
               disponible: value.disponible,
+              es_insumo: value.es_insumo,
             });
           }
         } else {
-          // Guard: require a positive price when no ingredients are selected
-          if (state.selectedIngredientes.length === 0 && value.precio_base <= 0) {
+          // Guard: require a positive price when no ingredients are selected and not insumo
+          if (!value.es_insumo && state.selectedIngredientes.length === 0 && value.precio_base <= 0) {
             dispatch({ type: "SET_ERROR", payload: "El precio base debe ser mayor a 0 cuando no hay ingredientes" });
             return;
           }
           await productosApi.create({
             ...value,
+            es_insumo: value.es_insumo,
             categorias_ids: state.selectedCategorias.map(c => c.id),
             ingredientes: state.selectedIngredientes.map(i => ({
               ingrediente_id: i.id,
@@ -1143,6 +1146,18 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
           {state.stockEditOnly ? (
             /* Stock-only mode: just stock_cantidad + disponible */
             <div className="grid grid-cols-2 gap-4 mb-4">
+              {!readOnly && (
+                <form.Field name="es_insumo">
+                  {(field) => (
+                    <div className="flex items-center gap-2">
+                      <input type="checkbox" checked={field.state.value ?? false}
+                        onChange={(e) => field.handleChange(e.target.checked)}
+                        className="cursor-pointer" />
+                      <label className="text-sm font-medium">Es Insumo?</label>
+                    </div>
+                  )}
+                </form.Field>
+              )}
               <form.Field name="stock_cantidad">
                 {(field) => (
                   <div>
@@ -1195,8 +1210,10 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
                 {(() => {
                   const editingProduct = state.editingId ? state.items.find(p => p.id === state.editingId) : null;
                   const hasIngredients = editingProduct?.tiene_ingredientes ?? false;
-                  // Disabled when ingredients are assigned (price is auto-calculated)
-                  const precioDisabled = state.editingId ? hasIngredients : state.selectedIngredientes.length > 0;
+                  const isInsumoValue = form.getFieldValue('es_insumo');
+                  // Disabled when ingredients are assigned (price is auto-calculated),
+                  // unless the product is marked as insumo (manual price).
+                  const precioDisabled = isInsumoValue ? false : (state.editingId ? hasIngredients : state.selectedIngredientes.length > 0);
                   return (
                     <form.Field name="precio_base">
                       {(field) => (
@@ -1299,6 +1316,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
                 <button type="button" onClick={() => dispatch({ type: "SET_SHOW_CATEGORIA_SELECTOR", payload: true })} className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer">Seleccionar Categorias</button>
               </div>
 
+              {!form.getFieldValue('es_insumo') && (
               <div className="border p-4 mb-4 rounded bg-gray-50">
                 <h3 className="text-lg font-medium mb-2">
                   Insumos
@@ -1327,6 +1345,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
                   onClick={() => dispatch({ type: "SET_SHOW_INGREDIENTE_SELECTOR", payload: true })}
                   className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer">Seleccionar Insumos</button>
               </div>
+              )}
             </>
           )}
 
@@ -1351,6 +1370,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
             {!readOnly && <th className="border p-2 text-left">Stock</th>}
             {!readOnly && !isStockMode && <th className="border p-2 text-left">Prep (min)</th>}
             <th className="border p-2 text-left">Disponible</th>
+            {!readOnly && <th className="border p-2 text-left">Es Insumo?</th>}
             {!readOnly && (!isStockMode || role === 'stock') && (
               <th className="border p-2 text-left">{isStockMode ? 'Ingredientes' : 'Relaciones'}</th>
             )}
@@ -1367,7 +1387,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
                 <td className="border p-2">
                   <span>
                     ${Number(prod.precio_base).toFixed(2)}
-                    {prod.tiene_ingredientes && role !== 'client' && (
+                    {prod.tiene_ingredientes && !prod.esInsumo && role !== 'client' && (
                       <span className="text-xs text-blue-600 font-medium ml-1">(calc)</span>
                     )}
                   </span>
@@ -1385,6 +1405,13 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
                     {prod.disponible ? "Si" : "No"}
                   </span>
                 </td>
+                {!readOnly && (
+                  <td className="border p-2 text-center">
+                    {prod.esInsumo
+                      ? <span className="text-blue-600 font-bold">✓</span>
+                      : <span className="text-gray-400">—</span>}
+                  </td>
+                )}
                 {!readOnly && (!isStockMode || role === 'stock') && (
                   <td className="border p-2">
                     <div className="flex gap-1">
@@ -1507,7 +1534,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
       )}
 
       {/* Ingredient selector for creation form */}
-      {state.showIngredienteSelector && (
+      {state.showIngredienteSelector && !form.getFieldValue('es_insumo') && (
         <IngredienteSelector
           allIngredientes={allIngs}
           selectedIds={state.selectedIngredientes.map(i => i.id)}

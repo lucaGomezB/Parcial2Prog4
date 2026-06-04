@@ -38,6 +38,15 @@ class ProductoService:
             # Business rule: zero stock means the product is not available for sale.
             if db_producto.stock_cantidad == 0:
                 db_producto.disponible = False
+
+            # Validate price: must be > 0 when the product has no ingredients
+            # and is not marked as an insumo (resold item with manual price).
+            if not data.es_insumo and (not data.ingredientes) and db_producto.precio_base <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="El precio base debe ser mayor a 0 cuando el producto no tiene ingredientes ni es de reventa"
+                )
+
             uow.productos.add(db_producto)
             uow.productos.flush()
 
@@ -49,7 +58,8 @@ class ProductoService:
                         es_principal=(cat_id == data.categoria_principal_id),
                     )
 
-            if data.ingredientes:
+            # Skip ingredient block entirely for insumo products
+            if not data.es_insumo and data.ingredientes:
                 for ingrediente in data.ingredientes:
                     uow.productos.add_ingrediente_relacion(
                         producto_id=db_producto.id,
@@ -60,8 +70,8 @@ class ProductoService:
                         cantidad=ingrediente.cantidad,
                     )
 
-            # Recalculate price if the product has ingredients
-            if data.ingredientes:
+            # Recalculate price if the product has ingredients (skip for insumo)
+            if not data.es_insumo and data.ingredientes:
                 ProductoService._recalcular_precio_producto(session, db_producto.id)
 
             uow.productos.refresh(db_producto)
@@ -76,6 +86,10 @@ class ProductoService:
         """
         db_producto = session.get(Producto, producto_id)
         if not db_producto:
+            return
+
+        # Skip recalculation for insumo products (their price is manual)
+        if db_producto.es_insumo:
             return
 
         # Fetch all ProductoIngrediente associations for this product
@@ -108,6 +122,16 @@ class ProductoService:
                 ProductoIngrediente.ingrediente_id == ingrediente_id,
             ).distinct()
             producto_ids = session.exec(stmt).all()
+
+            # Exclude insumo products from recalculation (their price is manual).
+            # Single batch query instead of N+1 individual session.get() calls.
+            if producto_ids:
+                insumo_stmt = select(Producto.id).where(
+                    Producto.id.in_(producto_ids),
+                    Producto.es_insumo == True,
+                )
+                insumo_ids = set(session.exec(insumo_stmt).all())
+                producto_ids = [pid for pid in producto_ids if pid not in insumo_ids]
 
             for pid in producto_ids:
                 ProductoService._recalcular_precio_producto(session, pid)
@@ -227,8 +251,16 @@ class ProductoService:
             if db_producto.stock_cantidad == 0:
                 db_producto.disponible = False
 
-            # Recalculate price if the product has ingredients
-            if db_producto.ingredientes:
+            # Validate price after updates: must be > 0 when the product
+            # has no ingredients and is not an insumo (resold item).
+            if not db_producto.es_insumo and not db_producto.ingredientes and db_producto.precio_base <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="El precio base debe ser mayor a 0 cuando el producto no tiene ingredientes ni es de reventa"
+                )
+
+            # Recalculate price if the product has ingredients (skip for insumo)
+            if not db_producto.es_insumo and db_producto.ingredientes:
                 ProductoService._recalcular_precio_producto(session, producto_id)
 
             uow.productos.add(db_producto)
@@ -277,8 +309,9 @@ class ProductoService:
                 orden=data.orden,
                 cantidad=data.cantidad,
             )
-            # Recalculate price after ingredient change
-            ProductoService._recalcular_precio_producto(session, producto_id)
+            # Recalculate price after ingredient change (skip for insumo)
+            if not db_producto.es_insumo:
+                ProductoService._recalcular_precio_producto(session, producto_id)
             return uow.productos.get_ingredientes(producto_id)
 
     @staticmethod
@@ -286,7 +319,7 @@ class ProductoService:
         """Remove an ingredient association and recalculate the price."""
         with CatalogoDeProductosUnitOfWork(session) as uow:
             result = uow.productos.delete_ingrediente_relacion(producto_id, ingrediente_id)
-            if result:
+            if result and db_producto and not db_producto.es_insumo:
                 # Recalculate price after ingredient removal
                 ProductoService._recalcular_precio_producto(session, producto_id)
             return result
@@ -309,8 +342,9 @@ class ProductoService:
             pi.cantidad = cantidad
             session.add(pi)
 
-            # Recalculate price after quantity change
-            ProductoService._recalcular_precio_producto(session, producto_id)
+            # Recalculate price after quantity change (skip for insumo)
+            if db_producto and not db_producto.es_insumo:
+                ProductoService._recalcular_precio_producto(session, producto_id)
 
             return uow.productos.get_ingredientes(producto_id)
 

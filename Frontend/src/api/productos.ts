@@ -23,6 +23,7 @@ export interface Producto {
   stock_cantidad: number;
   tiempo_prep_min: number;
   disponible: boolean;
+  esInsumo?: boolean;
   tiene_ingredientes?: boolean;
 }
 
@@ -43,6 +44,7 @@ export interface ProductoCreate {
   imagenes_url?: string[];
   tiempo_prep_min?: number;
   disponible?: boolean;
+  esInsumo?: boolean;
   categorias_ids?: number[];
   categoria_principal_id?: number | null;
   ingredientes?: IngredienteAsignado[];
@@ -55,6 +57,7 @@ export interface ProductoUpdate {
   precio_base?: number | null;
   stock_cantidad?: number | null;
   disponible?: boolean | null;
+  esInsumo?: boolean | null;
   categorias_ids?: number[] | null;
 }
 

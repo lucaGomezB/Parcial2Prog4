@@ -213,9 +213,14 @@ def cancelar(
 @router.patch("/{pedido_id}", response_model=PedidoRead,
               dependencies=[Depends(require_roles(["ADMIN", "PEDIDOS"]))])
 def update(pedido_id: int, data: PedidoUpdate, session: Session = Depends(get_session)):
-    """PATCH /pedidos/{id} — Update order metadata (address, payment method, notes).
+    """PATCH /pedidos/{id} — Update order metadata and/or replace details.
 
-    Does NOT modify state or totals. Requires ADMIN or PEDIDOS role.
+    Metadata fields: direccion_id, forma_pago_codigo, notas.
+    If `detalles` is provided, ALL existing detail lines are replaced
+    with the new set (works only for PENDIENTE orders).
+    Subtotal and total are recalculated automatically.
+
+    Requires ADMIN or PEDIDOS role.
     """
     obj = PedidoService.update(session, pedido_id, data)
     if not obj:

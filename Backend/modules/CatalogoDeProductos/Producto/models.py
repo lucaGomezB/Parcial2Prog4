@@ -33,6 +33,7 @@ class ProductoBase(TimestampModel):
     stock_cantidad: int = Field(default=0)  # INTEGER CHECK >= 0 DEFAULT 0 — ERD v5
     tiempo_prep_min: int = Field(default=0)
     disponible: bool = Field(default=True)
+    es_insumo: bool = Field(default=False)
 
 
 class Producto(ProductoBase, SoftDeleteModel, table=True):

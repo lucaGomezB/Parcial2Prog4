@@ -39,6 +39,7 @@ class ProductoCreate(SQLModel):
     stock_cantidad: int = 0
     tiempo_prep_min: int = 0
     disponible: bool = True
+    es_insumo: bool = False
     categorias_ids: List[int] = []
     categoria_principal_id: Optional[int] = None
     ingredientes: Optional[List[IngredienteAsignado]] = []
@@ -64,6 +65,7 @@ class ProductoUpdate(SQLModel):
     stock_cantidad: Optional[int] = None
     tiempo_prep_min: Optional[int] = None
     disponible: Optional[bool] = None
+    es_insumo: Optional[bool] = None
     categorias_ids: Optional[List[int]] = None
 
 
@@ -82,6 +84,7 @@ class ProductoRead(SQLModel):
     stock_cantidad: int = 0
     tiempo_prep_min: int = 0
     disponible: bool = True
+    es_insumo: bool = False
     tiene_ingredientes: bool = False
     model_config = ConfigDict(from_attributes=True)
 
