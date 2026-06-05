@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, setToken, setUserInfo } from "../api/client";
+import { AxiosError } from "axios";
 import { useAuthStore } from "../store/authStore";
 import {
   useAppForm,
@@ -137,33 +138,21 @@ export default function Login({ onLogin }: { onLogin?: () => void }) {
       } catch (err: unknown) {
         console.error("Auth error:", err);
 
-        // Distinguish network-level failures from logical API errors
-        if (err instanceof TypeError && err.message === "Failed to fetch") {
-          setError(
-            modo === "login"
-              ? "No se puede conectar con el servidor. Asegurate de que el backend esté corriendo (uvicorn)."
-              : "No se puede conectar con el servidor."
-          );
-        } else if (err instanceof Error && err.message) {
-          // Backend usually wraps errors in a "detail" field (FastAPI convention)
-          const axiosErr = err as unknown as { response?: { data?: Record<string, unknown> } };
-          const responseData = axiosErr?.response?.data;
-          if (responseData?.detail) {
-            setError(String(responseData.detail));
-          } else {
-            setError(
-              modo === "login"
-                ? "Email o contraseña incorrectos"
-                : "Error al crear la cuenta. Intenta con otro email."
-            );
+        let errorMsg = "";
+        if (err instanceof AxiosError && err.response?.data) {
+          const body = err.response.data as Record<string, unknown>;
+          if (body.detail && typeof body.detail === "string") {
+            errorMsg = body.detail;
           }
-        } else {
-          setError(
-            modo === "login"
-              ? "Error inesperado. Revisa la consola para más detalles."
-              : "Error inesperado. Revisa la consola."
-          );
         }
+        if (!errorMsg) {
+          if (modo === "register") {
+            errorMsg = "Error al crear la cuenta. Es posible que el email ya este registrado.";
+          } else {
+            errorMsg = "No se pudo iniciar sesion. Verifique su email y contrasena.";
+          }
+        }
+        setError(errorMsg);
       } finally {
         setIsLoading(false);
       }

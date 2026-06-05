@@ -75,7 +75,7 @@ function DetallesPopup({ pedido, detalles, onClose, esGestor }: {
 }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded p-6 w-full max-w-2xl max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded p-6 w-full max-w-2xl max-h-[80vh]" style={{ overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-bold">Detalles del Pedido{esGestor ? ` #${pedido.id}` : ""}</h2>
           <button onClick={onClose} className="text-gray-500 text-xl cursor-pointer">X</button>
@@ -153,7 +153,7 @@ function StockModal({ pedido, detalles, onResolve, onCancel }: {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-white rounded p-6 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded p-6 w-full max-w-lg" style={{ overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-bold text-amber-800">Stock Insuficiente</h2>
           <button onClick={onCancel} className="text-gray-500 text-xl cursor-pointer">X</button>
@@ -275,7 +275,7 @@ export default function PedidosPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detailPopup, setDetailPopup] = useState<Pedido | null>(null);
-  const [mensaje, setMensaje] = useState<string | null>(null);
+  const [mensaje, setMensaje] = useState<{tipo: 'exito' | 'error'; texto: string} | null>(null);
   const [modo, setModo] = useState<ModoVista>("activos");
   const [stockIssue, setStockIssue] = useState<{ pedido: Pedido; detalles: StockInsuficienteDetalle[] } | null>(null);
 
@@ -284,6 +284,12 @@ export default function PedidosPage() {
   const esHistorial = modo === "historial";
 
   const [limiteExcedido, setLimiteExcedido] = useState(false);
+
+  /** Helper to show a timed toast message. */
+  const mostrarMensaje = (tipo: 'exito' | 'error', texto: string) => {
+    setMensaje({ tipo, texto });
+    setTimeout(() => setMensaje(null), 3000);
+  };
 
   /**
    * Fetches orders from the backend.
@@ -334,9 +340,8 @@ export default function PedidosPage() {
   const handleAvanzar = async (id: number) => {
     try {
       const res = await pedidosApi.avanzar(id);
-      setMensaje(res.mensaje);
+      mostrarMensaje('exito', res.mensaje);
       loadPedidos();
-      setTimeout(() => setMensaje(null), 3000);
     } catch (e) {
       if (e instanceof AxiosError && e.response?.status === 409 && e.response.data) {
         const body = e.response.data as { detail?: { error: string; mensaje: string; detalles: StockInsuficienteDetalle[] } };
@@ -369,9 +374,8 @@ export default function PedidosPage() {
       // Retry confirmation
       const res = await pedidosApi.avanzar(stockIssue.pedido.id);
       setStockIssue(null);
-      setMensaje(res.mensaje);
+      mostrarMensaje('exito', res.mensaje);
       loadPedidos();
-      setTimeout(() => setMensaje(null), 3000);
     } catch (e) {
       setError((e as Error).message);
       setTimeout(() => setError(null), 3000);
@@ -390,9 +394,8 @@ export default function PedidosPage() {
     if (!confirm("Estas seguro de cancelar este pedido?")) return;
     try {
       await pedidosApi.cancelar(id);
-      setMensaje("Pedido cancelado");
+      mostrarMensaje('exito', 'Pedido cancelado correctamente');
       loadPedidos();
-      setTimeout(() => setMensaje(null), 3000);
     } catch (e) {
       setError((e as Error).message);
       setTimeout(() => setError(null), 3000);
@@ -436,8 +439,8 @@ export default function PedidosPage() {
 
       {/* Feedback banners */}
       {mensaje && (
-        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-2 rounded mb-4">
-          {mensaje}
+        <div className={`p-3 mb-4 rounded ${mensaje.tipo === 'exito' ? 'bg-green-100 text-green-800 border border-green-400' : 'bg-red-100 text-red-800 border border-red-400'}`}>
+          {mensaje.texto}
         </div>
       )}
       {error && (
@@ -448,7 +451,10 @@ export default function PedidosPage() {
 
       {/* Content area: loading / empty / table */}
       {loading ? (
-        <p className="text-gray-500">Cargando pedidos...</p>
+        <div className="flex justify-center items-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <span className="ml-3 text-gray-600">Cargando pedidos...</span>
+          </div>
       ) : pedidos.length === 0 ? (
         <div className="text-center py-8 text-gray-500">
           {esHistorial ? (
@@ -475,7 +481,7 @@ export default function PedidosPage() {
           {/* Orders table — columns adapt based on role */}
           <table className="w-full border-collapse border">
             <thead><tr className="bg-gray-200">
-              {esGestor && <th className="border p-2 text-left">ID</th>}
+              {esGestor && <th className="border p-2 text-left">Pedido #</th>}
               {esGestor && <th className="border p-2 text-left">Usuario</th>}
               <th className="border p-2 text-left">Fecha</th>
               <th className="border p-2 text-left">Estado</th>
@@ -485,11 +491,11 @@ export default function PedidosPage() {
             </tr></thead>
             <tbody>
               {pedidos.map((ped) => (
-                <tr key={ped.id} className="hover:bg-gray-100 border-b">
+                <tr key={ped.id} className={`hover:bg-gray-100 border-b ${ped.deleted_at ? 'bg-red-50' : ''}`}>
                   {esGestor && <td className="p-2 font-mono">#{ped.id}</td>}
                   {esGestor && (
                     <td className="p-2">
-                      {ped.usuario ? ped.usuario.email : `ID ${ped.usuario_id}`}
+                      {ped.usuario ? ped.usuario.email : `Usuario #${ped.usuario_id}`}
                     </td>
                   )}
                   <td className="p-2 text-sm">
@@ -501,7 +507,7 @@ export default function PedidosPage() {
                   {/* State badge with role-specific color */}
                   <td className="p-2">
                     <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${ESTADOS_COLORES[ped.estado_codigo] || "bg-gray-100"}`}>
-                      {ETIQUETAS_ESTADO[ped.estado_codigo] || ped.estado_codigo}
+                      {ETIQUETAS_ESTADO[ped.estado_codigo] || "Estado desconocido"}
                     </span>
                   </td>
                   <td className="p-2 text-xs">

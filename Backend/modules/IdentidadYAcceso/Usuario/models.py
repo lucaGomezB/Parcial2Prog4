@@ -14,12 +14,12 @@ from ..usuario_rol import UsuarioRol
 from ..RefreshToken.models import RefreshToken
 from models.base import TimestampModel, SoftDeleteModel
 
-# Direct imports for back-populated relationships
+# DireccionEntrega imported directly (same-package, no circular risk)
 from ..DireccionEntrega.models import DireccionEntrega
-from modules.VentasPagosTrazabilidad.Pedido.models import Pedido
 
 if TYPE_CHECKING:
     from ..Rol.models import Rol
+    from modules.VentasPagosTrazabilidad.Pedido.models import Pedido  # noqa: F401 (late import below for runtime)
 
 
 class UsuarioBase(TimestampModel):
@@ -72,3 +72,9 @@ class Usuario(UsuarioBase, SoftDeleteModel, table=True):
 
     # 1:M relationship with Pedido
     pedidos: List["Pedido"] = Relationship(back_populates="usuario")
+
+
+# Late imports: needed at runtime for SQLAlchemy to resolve string references
+# in Relationship() definitions above. Imported here (after the class definition)
+# to break circular import chains during module load.
+from modules.VentasPagosTrazabilidad.Pedido.models import Pedido  # noqa: E402, F401

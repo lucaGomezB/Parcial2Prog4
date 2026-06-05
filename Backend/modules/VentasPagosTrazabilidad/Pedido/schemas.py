@@ -104,6 +104,7 @@ class PedidoRead(BaseModel):
     notas: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    deleted_at: Optional[datetime] = None
     detalles: Optional[List[DetallePedidoRead]] = None
     usuario: Optional[UsuarioInfo] = None
 

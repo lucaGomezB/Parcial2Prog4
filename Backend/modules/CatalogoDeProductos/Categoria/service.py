@@ -82,6 +82,7 @@ class CategoriaService:
         with CatalogoDeProductosUnitOfWork(session) as uow:
             db_categoria = Categoria(**data.model_dump())
             uow.categorias.add(db_categoria)
+            uow.flush()
             uow.categorias.refresh(db_categoria)
             return db_categoria
 

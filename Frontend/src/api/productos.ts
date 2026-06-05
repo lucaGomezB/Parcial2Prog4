@@ -19,11 +19,12 @@ export interface Producto {
   descripcion: string | null;
   receta?: string | null;
   precio_base: number;
+  precio_actual: number;
   imagenes_url: string[];
   stock_cantidad: number;
   tiempo_prep_min: number;
   disponible: boolean;
-  esInsumo?: boolean;
+  es_insumo: boolean;
   tiene_ingredientes?: boolean;
 }
 
@@ -40,11 +41,12 @@ export interface ProductoCreate {
   descripcion?: string | null;
   receta?: string | null;
   precio_base?: number;
+  precio_actual?: number;
   stock_cantidad?: number;
   imagenes_url?: string[];
   tiempo_prep_min?: number;
   disponible?: boolean;
-  esInsumo?: boolean;
+  es_insumo?: boolean;
   categorias_ids?: number[];
   categoria_principal_id?: number | null;
   ingredientes?: IngredienteAsignado[];
@@ -55,9 +57,10 @@ export interface ProductoUpdate {
   descripcion?: string | null;
   receta?: string | null;
   precio_base?: number | null;
+  precio_actual?: number | null;
   stock_cantidad?: number | null;
   disponible?: boolean | null;
-  esInsumo?: boolean | null;
+  es_insumo?: boolean | null;
   categorias_ids?: number[] | null;
 }
 

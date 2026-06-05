@@ -1,5 +1,18 @@
 """
-EstadoPedido schemas — Pydantic models for order status.
-Kept empty as EstadoPedido is a seed-data catalog with no API exposure.
-The model itself is used internally by PedidoService for FSM validation.
+EstadoPedido schemas — Pydantic models for order status API response.
 """
+from typing import Optional
+from pydantic import BaseModel, ConfigDict
+from datetime import datetime
+
+
+class EstadoPedidoRead(BaseModel):
+    """Response schema for a single order status."""
+    codigo: str
+    descripcion: str
+    orden: int
+    es_terminal: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

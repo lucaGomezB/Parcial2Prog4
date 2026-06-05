@@ -56,11 +56,13 @@ function NuevaDireccionModal({
   onSave: (data: DireccionEntregaInput) => Promise<void>;
 }) {
   const [guardando, setGuardando] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   const form = useAppForm({
     defaultValues: { alias: "", linea1: "", linea2: "", ciudad: "" },
     onSubmit: async ({ value }) => {
       setGuardando(true);
+      setModalError(null);
       try {
         await onSave({
           alias: value.alias.trim() || null,
@@ -70,6 +72,9 @@ function NuevaDireccionModal({
           es_principal: false,
         });
         onClose();
+      } catch {
+        setModalError("Error al guardar la direccion. Intente nuevamente.");
+        setTimeout(() => setModalError(null), 4000);
       } finally {
         setGuardando(false);
       }
@@ -78,8 +83,13 @@ function NuevaDireccionModal({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded p-6 w-full max-w-md" style={{ overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-bold mb-4">Nueva Direccion de Entrega</h2>
+        {modalError && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded mb-4 text-sm">
+            {modalError}
+          </div>
+        )}
         <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void form.handleSubmit(); }} className="space-y-3">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Alias</label>
@@ -203,10 +213,10 @@ function StockWarningModal({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded p-6 w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded p-6 w-full max-w-2xl" style={{ overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-bold mb-1">Stock Insuficiente</h2>
         <p className="text-sm text-gray-600 mb-4">
-          Algunos productos no tienen stock suficiente. Ajusta las cantidades o remove los productos para continuar.
+          Algunos productos no tienen stock suficiente. Ajusta las cantidades o elimina los productos para continuar.
         </p>
 
         <table className="w-full border-collapse border mb-4">
@@ -214,7 +224,7 @@ function StockWarningModal({
             <tr className="bg-gray-200">
               <th className="border p-2 text-left">Producto</th>
               <th className="border p-2 text-center">Solicitado</th>
-              <th className="border p-2 text-center">Stock Disp.</th>
+              <th className="border p-2 text-center">Stock disponible</th>
               <th className="border p-2 text-center">Nueva Cant.</th>
               <th className="border p-2 text-center">Accion</th>
             </tr>
@@ -310,6 +320,7 @@ export default function Carrito() {
   const [showNewDir, setShowNewDir] = useState(false);
   const [loadingDirs, setLoadingDirs] = useState(false);
   const [stockWarnings, setStockWarnings] = useState<ValidarStockDetalle[] | null>(null);
+  const [mensaje, setMensaje] = useState<{ tipo: 'exito' | 'error'; texto: string } | null>(null);
 
   // Sync local state with localStorage on mount
   useEffect(() => {
@@ -422,7 +433,8 @@ export default function Carrito() {
 
       clearCarrito();
       setItems([]);
-      navigate("/pedidos");
+      setMensaje({ tipo: 'exito', texto: 'Pedido creado correctamente' });
+      setTimeout(() => navigate("/pedidos"), 1500);
     } catch (e) {
       // Step 3: Handle 409 from auto-advance (stock race condition)
       if (e instanceof AxiosError && e.response?.status === 409) {
@@ -439,10 +451,17 @@ export default function Carrito() {
       if (e instanceof AxiosError && e.response?.data) {
         const data = e.response.data as Record<string, unknown>;
         const detail = data.detail;
-        if (detail != null && typeof detail === "object") {
-          setError(JSON.stringify(detail));
-        } else if (typeof detail === "string") {
+        if (typeof detail === 'string') {
           setError(detail);
+        } else if (typeof detail === 'object') {
+          const obj = detail as Record<string, unknown>;
+          if (obj.mensaje && typeof obj.mensaje === 'string') {
+            setError(obj.mensaje);
+          } else if (obj.detalles && Array.isArray(obj.detalles)) {
+            setError('No hay stock suficiente para completar el pedido.');
+          } else {
+            setError('Error al procesar el pedido. Verifique los datos.');
+          }
         } else if (typeof data.message === "string") {
           setError(data.message);
         } else {
@@ -512,6 +531,13 @@ export default function Carrito() {
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">Carrito ({itemCount} productos)</h1>
+
+      {/* Success/Error banner */}
+      {mensaje && (
+        <div className={`p-3 mb-4 rounded border ${mensaje.tipo === 'exito' ? 'bg-green-100 text-green-800 border-green-400' : 'bg-red-100 text-red-800 border-red-400'}`}>
+          {mensaje.texto}
+        </div>
+      )}
 
       {/* Error banner */}
       {error && (

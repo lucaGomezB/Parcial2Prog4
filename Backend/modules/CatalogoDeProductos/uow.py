@@ -37,6 +37,24 @@ class CatalogoDeProductosUnitOfWork:
             self.commit()
         return False
 
+    def add(self, entity):
+        """Stage an entity for insert or update."""
+        self.session.add(entity)
+        return entity
+
+    def flush(self):
+        """Send pending SQL to DB without committing (preserves rollback)."""
+        self.session.flush()
+
+    def refresh(self, entity):
+        """Reload entity from DB after flush to get generated values."""
+        self.session.refresh(entity)
+        return entity
+
+    def delete(self, entity):
+        """Mark an entity for deletion on next flush/commit."""
+        self.session.delete(entity)
+
     def commit(self):
         self.session.commit()
 

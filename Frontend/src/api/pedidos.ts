@@ -58,6 +58,7 @@ export interface Pedido {
   notas: string | null;
   created_at: string;
   updated_at: string;
+  deleted_at: string | null;
   detalles?: DetallePedido[];
   usuario?: UsuarioInfo | null;
 }

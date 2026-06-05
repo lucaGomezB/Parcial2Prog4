@@ -48,7 +48,7 @@ interface State {
   showForm: boolean;
   stockEditOnly: boolean;
   selectedCategorias: {id: number, nombre: string, descripcion: string | null}[];
-  selectedIngredientes: {id: number, nombre: string, es_alergeno: boolean}[];
+  selectedIngredientes: {id: number, nombre: string, es_alergeno: boolean, cantidad: number}[];
   showCategoriaSelector: boolean;
   showIngredienteSelector: boolean;
 }
@@ -64,7 +64,7 @@ type Action =
   | { type: "START_CREATE" }
   | { type: "CLOSE_FORM" }
   | { type: "SET_SELECTED_CATEGORIAS"; payload: {id: number, nombre: string, descripcion: string | null}[] }
-  | { type: "SET_SELECTED_INGREDIENTES"; payload: {id: number, nombre: string, es_alergeno: boolean}[] }
+  | { type: "SET_SELECTED_INGREDIENTES"; payload: {id: number, nombre: string, es_alergeno: boolean, cantidad: number}[] }
   | { type: "SET_SHOW_CATEGORIA_SELECTOR"; payload: boolean }
   | { type: "SET_SHOW_INGREDIENTE_SELECTOR"; payload: boolean };
 
@@ -169,14 +169,16 @@ function CategoriaSelector({ allCategorias, selectedIds, onSelect, onClose }: {
  * Modal for selecting ingredients to assign to a new product.
  * Shows allergen info, price, and stock for each ingredient.
  */
-function IngredienteSelector({ allIngredientes, selectedIds, onSelect, onClose }: {
-  allIngredientes: Ingrediente[]; selectedIds: number[]; onSelect: (ids: number[]) => void; onClose: () => void;
+function IngredienteSelector({ allIngredientes, selected, onSelect, onClose }: {
+  allIngredientes: Ingrediente[]; selected: {id: number, cantidad: number}[]; onSelect: (items: {id: number, cantidad: number}[]) => void; onClose: () => void;
 }) {
-  const [localSelected, setLocalSelected] = useState<number[]>(selectedIds);
+  const [localSelected, setLocalSelected] = useState<{id: number, cantidad: number}[]>(selected);
 
   const toggleIngredient = (id: number) => {
     setLocalSelected(prev =>
-      prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
+      prev.some(s => s.id === id)
+        ? prev.filter(s => s.id !== id)
+        : [...prev, { id, cantidad: 1 }]
     );
   };
 
@@ -189,7 +191,7 @@ function IngredienteSelector({ allIngredientes, selectedIds, onSelect, onClose }
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white rounded p-6 w-full max-w-2xl max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold">Seleccionar Insumos</h2>
+          <h2 className="text-lg font-bold">Seleccionar Ingredientes / Insumos</h2>
           <button onClick={onClose} className="text-gray-500 text-xl cursor-pointer">X</button>
         </div>
         <table className="w-full border-collapse border mb-4">
@@ -199,19 +201,40 @@ function IngredienteSelector({ allIngredientes, selectedIds, onSelect, onClose }
             <th className="border p-2 text-left">Alergeno</th>
             <th className="border p-2 text-left">Precio</th>
             <th className="border p-2 text-left">Stock</th>
+            <th className="border p-2 text-left">Cantidad</th>
+            <th className="border p-2 text-left">Max Productos</th>
           </tr></thead>
           <tbody>
-            {allIngredientes.map((ing) => (
+            {allIngredientes.map((ing) => {
+              const sel = localSelected.find(s => s.id === ing.id);
+              return (
               <tr key={ing.id}>
                 <td className="border p-2">
-                  <input type="checkbox" checked={localSelected.includes(ing.id)} onChange={() => toggleIngredient(ing.id)} />
+                  <input type="checkbox" checked={!!sel} onChange={() => toggleIngredient(ing.id)} />
                 </td>
                 <td className="border p-2">{ing.nombre}</td>
                 <td className="border p-2">{ing.es_alergeno ? "Si" : "No"}</td>
                 <td className="border p-2">${Number(ing.precio_actual).toFixed(2)}</td>
                 <td className="border p-2">{ing.stock_actual}</td>
+                <td className="border p-2">
+                  {sel && (
+                    <input type="number" min="1"
+                      value={sel.cantidad}
+                      onChange={(e) => {
+                        const newCant = parseInt(e.target.value) || 1;
+                        setLocalSelected(prev =>
+                          prev.map(s => s.id === ing.id ? { ...s, cantidad: newCant } : s)
+                        );
+                      }}
+                      className="border px-2 py-1 rounded w-20" />
+                  )}
+                </td>
+                <td className="border p-2">
+                  {sel ? Math.floor(ing.stock_actual / sel.cantidad) : "-"}
+                </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
         <div className="flex gap-2">
@@ -246,6 +269,12 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
   const [addForm, setAddForm] = useState({ ingrediente_id: 0, cantidad: 1, es_removible: true, es_principal: false, orden: 0 });
   const [showAdd, setShowAdd] = useState(false);
   const [updatingCantidad, setUpdatingCantidad] = useState<number | null>(null);
+  const [mensaje, setMensaje] = useState<{tipo: 'exito' | 'error'; texto: string} | null>(null);
+
+  const mostrarMensaje = (tipo: 'exito' | 'error', texto: string) => {
+    setMensaje({ tipo, texto });
+    setTimeout(() => setMensaje(null), 3000);
+  };
 
   /** Loads both the product's current ingredients and all available ingredients. */
   const load = useCallback(async () => {
@@ -278,10 +307,15 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
   /** Adds a new ingredient relationship to the product. */
   const handleAdd = async () => {
     if (!addForm.ingrediente_id) return;
-    await productosApi.addIngrediente(productoId, addForm);
-    setShowAdd(false);
-    setAddForm({ ingrediente_id: 0, cantidad: 1, es_removible: true, es_principal: false, orden: 0 });
-    refresh();
+    try {
+      await productosApi.addIngrediente(productoId, addForm);
+      setShowAdd(false);
+      setAddForm({ ingrediente_id: 0, cantidad: 1, es_removible: true, es_principal: false, orden: 0 });
+      refresh();
+      mostrarMensaje('exito', 'Ingrediente agregado correctamente');
+    } catch {
+      mostrarMensaje('error', 'Error al agregar ingrediente');
+    }
   };
 
   /**
@@ -310,8 +344,13 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
   /** Removes an ingredient from the product. */
   const handleRemove = async (ingredienteId: number) => {
     if (!confirm("Quitar este ingrediente?")) return;
-    await productosApi.removeIngrediente(productoId, ingredienteId);
-    refresh();
+    try {
+      await productosApi.removeIngrediente(productoId, ingredienteId);
+      refresh();
+      mostrarMensaje('exito', 'Ingrediente quitado correctamente');
+    } catch {
+      mostrarMensaje('error', 'Error al quitar ingrediente');
+    }
   };
 
   /** Toggles the es_alergeno flag on an ingredient directly from this popup. */
@@ -341,9 +380,15 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white rounded p-6 w-full max-w-2xl max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold">Insumos de &quot;{productoNombre}&quot;</h2>
+          <h2 className="text-lg font-bold">Ingredientes / Insumos de &quot;{productoNombre}&quot;</h2>
           <button onClick={onClose} className="text-gray-500 text-xl cursor-pointer">X</button>
         </div>
+
+        {mensaje && (
+          <div className={`p-3 mb-4 rounded ${mensaje.tipo === 'exito' ? 'bg-green-100 text-green-800 border border-green-400' : 'bg-red-100 text-red-800 border border-red-400'}`}>
+            {mensaje.texto}
+          </div>
+        )}
 
         {loading ? <p>Cargando...</p> : (
           <>
@@ -399,7 +444,7 @@ function IngredientesPopup({ productoId, productoNombre, onClose }: {
                                     onClick={() => handleToggleAlergeno(ing.ingrediente_id, isAlergeno)}
                                     disabled={toggling === ing.ingrediente_id}
                                     className="text-xs border border-gray-400 rounded px-1.5 py-0.5 hover:bg-gray-100 cursor-pointer disabled:opacity-50"
-                                    title={isAlergeno ? "Mark as non-allergen" : "Mark as allergen"}
+                                    title={isAlergeno ? "Marcar como no alergeno" : "Marcar como alergeno"}
                                   >
                                     {toggling === ing.ingrediente_id ? "..." : "Cambiar"}
                                   </button>
@@ -499,6 +544,12 @@ function CategoriasPopup({ productoId, productoNombre, onClose }: {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ categoria_id: 0, es_principal: false });
+  const [mensaje, setMensaje] = useState<{tipo: 'exito' | 'error'; texto: string} | null>(null);
+
+  const mostrarMensaje = (tipo: 'exito' | 'error', texto: string) => {
+    setMensaje({ tipo, texto });
+    setTimeout(() => setMensaje(null), 3000);
+  };
 
   /** Loads both the product's current categories and all available categories. */
   const load = useCallback(async () => {
@@ -522,16 +573,22 @@ function CategoriasPopup({ productoId, productoNombre, onClose }: {
       setShowAdd(false);
       setAddForm({ categoria_id: 0, es_principal: false });
       load();
-    } catch (e) {
-      alert((e as Error).message);
+      mostrarMensaje('exito', 'Categoria agregada correctamente');
+    } catch {
+      mostrarMensaje('error', 'Error al agregar la categoria. Verifique los datos.');
     }
   };
 
   /** Removes a category assignment from the product. */
   const handleRemove = async (categoriaId: number) => {
     if (!confirm("Quitar esta categoria?")) return;
-    await productosApi.removeCategoria(productoId, categoriaId);
-    load();
+    try {
+      await productosApi.removeCategoria(productoId, categoriaId);
+      load();
+      mostrarMensaje('exito', 'Categoria quitada correctamente');
+    } catch {
+      mostrarMensaje('error', 'Error al quitar la categoria');
+    }
   };
 
   /** Categories not yet assigned to this product. */
@@ -546,6 +603,11 @@ function CategoriasPopup({ productoId, productoNombre, onClose }: {
           <h2 className="text-lg font-bold">Categorias de &quot;{productoNombre}&quot;</h2>
           <button onClick={onClose} className="text-gray-500 text-xl cursor-pointer">X</button>
         </div>
+        {mensaje && (
+          <div className={`p-3 mb-4 rounded ${mensaje.tipo === 'exito' ? 'bg-green-100 text-green-800 border border-green-400' : 'bg-red-100 text-red-800 border border-red-400'}`}>
+            {mensaje.texto}
+          </div>
+        )}
         {loading ? <p>Cargando...</p> : (
           <>
             {cats.length === 0 ? (
@@ -872,10 +934,16 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
   const [showVariantesModal, setShowVariantesModal] = useState(false);
   const [recentlyAdded, setRecentlyAdded] = useState<Set<number>>(new Set());
   const addTimerRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  const [mensaje, setMensaje] = useState<{tipo: 'exito' | 'error'; texto: string} | null>(null);
+
+  const mostrarMensaje = (tipo: 'exito' | 'error', texto: string) => {
+    setMensaje({ tipo, texto });
+    setTimeout(() => setMensaje(null), 3000);
+  };
 
   /** Adds a product to the cart (localStorage) and shows visual feedback. */
   const handleAddToCart = (prod: Producto) => {
-    addToCart(prod.id, prod.nombre, Number(prod.precio_base));
+    addToCart(prod.id, prod.nombre, Number(prod.precio_actual));
     triggerFeedback(prod.id);
   };
 
@@ -916,7 +984,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
         dispatch({ type: "SET_SELECTED_CATEGORIAS", payload: cats.map(c => ({ id: c.categoria_id, nombre: c.categoria_nombre, descripcion: null })) });
         const selectedIngs = ings.map(i => {
           const ing = allIngs.find(ai => ai.id === i.ingrediente_id);
-          return { id: i.ingrediente_id, nombre: i.ingrediente_nombre, es_alergeno: ing ? ing.es_alergeno : false };
+          return { id: i.ingrediente_id, nombre: i.ingrediente_nombre, es_alergeno: ing ? ing.es_alergeno : false, cantidad: i.cantidad ?? 1 };
         });
         dispatch({ type: "SET_SELECTED_INGREDIENTES", payload: selectedIngs });
       });
@@ -968,7 +1036,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
     if (!state.editingId && state.selectedIngredientes.length > 0) {
       const total = state.selectedIngredientes.reduce((sum, ing) => {
         const fullIng = allIngs.find(a => a.id === ing.id);
-        return sum + Number(fullIng?.precio_actual ?? 0);
+        return sum + Number(fullIng?.precio_actual ?? 0) * (ing.cantidad ?? 1);
       }, 0);
       precioCalculadoRef.current = total;
       form.setFieldValue('precio_base', total);
@@ -990,6 +1058,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
       nombre: "",
       descripcion: "",
       precio_base: 0,
+      precio_actual: 0,
       receta: "",
       stock_cantidad: 0,
       tiempo_prep_min: 0,
@@ -1013,11 +1082,13 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
               descripcion: value.descripcion,
               receta: value.receta,
               precio_base: value.precio_base,
+              precio_actual: value.precio_actual,
               stock_cantidad: value.stock_cantidad,
               disponible: value.disponible,
               es_insumo: value.es_insumo,
             });
           }
+          mostrarMensaje('exito', 'Producto actualizado correctamente');
         } else {
           // Guard: require a positive price when no ingredients are selected and not insumo
           if (!value.es_insumo && state.selectedIngredientes.length === 0 && value.precio_base <= 0) {
@@ -1026,15 +1097,18 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
           }
           await productosApi.create({
             ...value,
+            precio_actual: value.precio_actual,
             es_insumo: value.es_insumo,
             categorias_ids: state.selectedCategorias.map(c => c.id),
             ingredientes: state.selectedIngredientes.map(i => ({
               ingrediente_id: i.id,
+              cantidad: i.cantidad ?? 1,
               es_removible: true,
               es_principal: false,
               orden: 0,
             })),
           });
+          mostrarMensaje('exito', 'Producto creado correctamente');
         }
         dispatch({ type: "CLOSE_FORM" });
         fetchData();
@@ -1043,7 +1117,24 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
         if (err instanceof AxiosError && err.response?.data) {
           const body = err.response.data as Record<string, unknown>;
           if (body.detail) {
-            msg = JSON.stringify(body.detail, null, 2);
+            if (typeof body.detail === 'string') {
+              msg = body.detail;
+            } else if (typeof body.detail === 'object') {
+              const detail = body.detail as Record<string, unknown>;
+              const messages: string[] = [];
+              for (const [key, value] of Object.entries(detail)) {
+                if (Array.isArray(value)) {
+                  messages.push(value.join('. '));
+                } else if (typeof value === 'string') {
+                  messages.push(value);
+                } else {
+                  messages.push(JSON.stringify(value));
+                }
+              }
+              msg = messages.length > 0 ? messages.join('. ') : 'Error del servidor. Verifique los datos ingresados.';
+            } else {
+              msg = 'Error del servidor. Verifique los datos ingresados.';
+            }
           }
         }
         dispatch({ type: "SET_ERROR", payload: msg });
@@ -1066,9 +1157,11 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
       descripcion: prod.descripcion ?? "",
       receta: prod.receta ?? "",
       precio_base: prod.precio_base,
+      precio_actual: prod.precio_actual,
       stock_cantidad: prod.stock_cantidad,
       tiempo_prep_min: prod.tiempo_prep_min,
       disponible: prod.disponible,
+      es_insumo: prod.es_insumo,
       imagenes_url: prod.imagenes_url,
     });
     dispatch({ type: "START_EDIT", payload: prod });
@@ -1081,9 +1174,11 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
       descripcion: prod.descripcion ?? "",
       receta: prod.receta ?? "",
       precio_base: prod.precio_base,
+      precio_actual: prod.precio_actual,
       stock_cantidad: prod.stock_cantidad,
       tiempo_prep_min: prod.tiempo_prep_min,
       disponible: prod.disponible,
+      es_insumo: prod.es_insumo,
       imagenes_url: prod.imagenes_url,
     });
     dispatch({ type: "START_STOCK_EDIT", payload: prod });
@@ -1100,6 +1195,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
     if (!confirm("Eliminar este producto?")) return;
     try {
       await productosApi.delete(id);
+      mostrarMensaje('exito', 'Producto eliminado');
       fetchData();
     } catch (err) {
       dispatch({ type: "SET_ERROR", payload: (err as Error).message });
@@ -1117,6 +1213,11 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">{role === 'client' ? 'Menu' : 'Gestion de Productos'}</h1>
+      {mensaje && (
+        <div className={`p-3 mb-4 rounded ${mensaje.tipo === 'exito' ? 'bg-green-100 text-green-800 border border-green-400' : 'bg-red-100 text-red-800 border border-red-400'}`}>
+          {mensaje.texto}
+        </div>
+      )}
       {state.error && <p className="text-red-500 mb-4">{state.error}</p>}
 
       {/* Toolbar: create buttons, filter, export */}
@@ -1133,8 +1234,8 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
           onChange={(e) => dispatch({ type: "SET_FILTER", payload: e.target.value })}
           className="border px-2 py-1 rounded flex-grow" />
         {!hideExport && (
-          <button onClick={() => exportToExcel(filtered.map(({ id, nombre, precio_base, stock_cantidad, disponible, tiempo_prep_min }) => ({
-              id, nombre, precio_base, stock_cantidad, tiempo_prep_min, disponible: disponible ? "Si" : "No",
+          <button onClick={() => exportToExcel(filtered.map(({ id, nombre, precio_actual, stock_cantidad, disponible, tiempo_prep_min }) => ({
+              id, nombre, Precio: precio_actual, Stock: stock_cantidad, "Tiempo prep. (min)": tiempo_prep_min, Disponible: disponible ? "Si" : "No",
             })), "productos")}
             className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer">Exportar Excel</button>
         )}
@@ -1226,7 +1327,9 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
                           {(state.editingId && hasIngredients) || (!state.editingId && state.selectedIngredientes.length > 0) ? (
                             <p className="text-xs text-gray-500 mt-1 italic">
                               {!state.editingId
-                                ? `Calculado desde ${state.selectedIngredientes.length} ingrediente(s)`
+                                ? (state.selectedIngredientes.length === 1
+                                    ? 'Calculado desde 1 ingrediente'
+                                    : `Calculado desde ${state.selectedIngredientes.length} ingredientes`)
                                 : 'Calculado desde ingredientes'}
                             </p>
                           ) : null}
@@ -1235,6 +1338,17 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
                     </form.Field>
                   );
                 })()}
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Precio de venta</label>
+                <form.Field name="precio_actual">
+                  {(field) => (
+                    <input type="number" step="0.01" value={field.state.value ?? 0}
+                      onChange={(e) => field.handleChange(Number(e.target.value))}
+                      onBlur={field.handleBlur}
+                      className="border px-2 py-1 rounded w-full" />
+                  )}
+                </form.Field>
               </div>
               {/* Recipe textarea */}
               <div className="col-span-2">
@@ -1268,7 +1382,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
               <form.Field name="tiempo_prep_min">
                 {(field) => (
                   <div>
-                    <label className="block text-sm font-medium">Tiempo Prep. (min)</label>
+                    <label className="block text-sm font-medium">Tiempo de preparacion (minutos)</label>
                     <input type="number" value={field.state.value ?? 0}
                       onChange={(e) => field.handleChange(Number(e.target.value))}
                       onBlur={field.handleBlur}
@@ -1319,13 +1433,14 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
               {!form.getFieldValue('es_insumo') && (
               <div className="border p-4 mb-4 rounded bg-gray-50">
                 <h3 className="text-lg font-medium mb-2">
-                  Insumos
+                  Ingredientes / Insumos
                 </h3>
                 {state.selectedIngredientes.length > 0 && (
                   <table className="w-full border-collapse border mb-2">
                     <thead><tr className="bg-gray-200">
                       <th className="border p-2 text-left">Nombre</th>
                       <th className="border p-2 text-left">Alergeno</th>
+                      <th className="border p-2 text-left">Cantidad</th>
                       <th className="border p-2 text-left">Accion</th>
                     </tr></thead>
                     <tbody>
@@ -1333,6 +1448,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
                         <tr key={i.id}>
                           <td className="border p-2">{i.nombre}</td>
                           <td className="border p-2">{i.es_alergeno ? "Si" : "No"}</td>
+                          <td className="border p-2">{i.cantidad}</td>
                           <td className="border p-2">
                             <button type="button" onClick={() => dispatch({ type: "SET_SELECTED_INGREDIENTES", payload: state.selectedIngredientes.filter(si => si.id !== i.id) })} className="bg-red-600 text-white px-2 py-1 rounded text-sm cursor-pointer">Quitar</button>
                           </td>
@@ -1364,11 +1480,11 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
       {state.loading ? <p>Cargando...</p> : (
         <table className="w-full border-collapse border">
           <thead><tr className="bg-gray-200">
-            {!readOnly && <th className="border p-2 text-left">ID</th>}
+            {!readOnly && <th className="border p-2 text-left">Codigo</th>}
             <th className="border p-2 text-left">Nombre</th>
             <th className="border p-2 text-left">Precio</th>
             {!readOnly && <th className="border p-2 text-left">Stock</th>}
-            {!readOnly && !isStockMode && <th className="border p-2 text-left">Prep (min)</th>}
+            {!readOnly && !isStockMode && <th className="border p-2 text-left">Tiempo prep. (min)</th>}
             <th className="border p-2 text-left">Disponible</th>
             {!readOnly && <th className="border p-2 text-left">Es Insumo?</th>}
             {!readOnly && (!isStockMode || role === 'stock') && (
@@ -1381,13 +1497,13 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
           </tr></thead>
           <tbody>
             {filtered.map((prod) => (
-              <tr key={prod.id} className="hover:bg-gray-100">
+              <tr key={prod.id} className={`hover:bg-gray-100 ${prod.stock_cantidad === 0 ? 'bg-red-100' : prod.stock_cantidad < 50 ? 'bg-yellow-100' : ''}`}>
                 {!readOnly && <td className="border p-2">{prod.id}</td>}
                 <td className="border p-2">{prod.nombre}</td>
                 <td className="border p-2">
                   <span>
-                    ${Number(prod.precio_base).toFixed(2)}
-                    {prod.tiene_ingredientes && !prod.esInsumo && role !== 'client' && (
+                    ${Number(prod.precio_actual).toFixed(2)}
+                    {prod.tiene_ingredientes && !prod.es_insumo && role !== 'client' && (
                       <span className="text-xs text-blue-600 font-medium ml-1">(calc)</span>
                     )}
                   </span>
@@ -1407,7 +1523,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
                 </td>
                 {!readOnly && (
                   <td className="border p-2 text-center">
-                    {prod.esInsumo
+                    {prod.es_insumo
                       ? <span className="text-blue-600 font-bold">✓</span>
                       : <span className="text-gray-400">—</span>}
                   </td>
@@ -1537,9 +1653,17 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
       {state.showIngredienteSelector && !form.getFieldValue('es_insumo') && (
         <IngredienteSelector
           allIngredientes={allIngs}
-          selectedIds={state.selectedIngredientes.map(i => i.id)}
-          onSelect={(ids) => {
-            const selectedIngs = allIngs.filter(i => ids.includes(i.id)).map(i => ({ id: i.id, nombre: i.nombre, es_alergeno: i.es_alergeno }));
+          selected={state.selectedIngredientes.map(i => ({ id: i.id, cantidad: i.cantidad }))}
+          onSelect={(items) => {
+            const selectedIngs = items.map(item => {
+              const ing = allIngs.find(i => i.id === item.id);
+              return {
+                id: item.id,
+                nombre: ing?.nombre ?? '',
+                es_alergeno: ing?.es_alergeno ?? false,
+                cantidad: item.cantidad ?? 1,
+              };
+            });
             dispatch({ type: "SET_SELECTED_INGREDIENTES", payload: selectedIngs });
           }}
           onClose={() => dispatch({ type: "SET_SHOW_INGREDIENTE_SELECTOR", payload: false })}

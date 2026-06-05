@@ -52,6 +52,7 @@ function DireccionModal({
   onSave: (data: DireccionEntregaInput | DireccionEntregaUpdate) => Promise<void>;
 }) {
   const esEditar = !!direccion;
+  const [modalError, setModalError] = useState<string | null>(null);
 
   const form = useAppForm<DireccionFormFields>({
     defaultValues: {
@@ -72,12 +73,17 @@ function DireccionModal({
         provincia: value.provincia.trim() || null,
         codigo_postal: value.codigo_postal.trim() || null,
       };
-      if (esEditar) {
-        await onSave({ ...base, es_principal: value.es_principal } satisfies DireccionEntregaUpdate & { es_principal: boolean });
-      } else {
-        await onSave({ ...base, es_principal: value.es_principal } satisfies DireccionEntregaInput);
+      try {
+        if (esEditar) {
+          await onSave({ ...base, es_principal: value.es_principal } satisfies DireccionEntregaUpdate & { es_principal: boolean });
+        } else {
+          await onSave({ ...base, es_principal: value.es_principal } satisfies DireccionEntregaInput);
+        }
+        onClose();
+      } catch {
+        setModalError("Error al guardar la direccion. Intente nuevamente.");
+        setTimeout(() => setModalError(null), 4000);
       }
-      onClose();
     },
   });
 
@@ -87,6 +93,11 @@ function DireccionModal({
         <h2 className="text-lg font-bold mb-4">
           {esEditar ? "Editar Direccion" : "Nueva Direccion"}
         </h2>
+        {modalError && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded mb-4 text-sm">
+            {modalError}
+          </div>
+        )}
         <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void form.handleSubmit(); }} className="space-y-3">
           <form.Field name="alias">
             {(field) => (

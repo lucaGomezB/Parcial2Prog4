@@ -633,7 +633,7 @@ export default function AdminUsuariosPage() {
           <option value="">Todos los roles</option>
           {todosRoles.map((rol) => (
             <option key={rol.codigo} value={rol.codigo}>
-              {rol.nombre} ({rol.codigo})
+              {rol.nombre}
             </option>
           ))}
         </select>
@@ -641,7 +641,10 @@ export default function AdminUsuariosPage() {
 
       {/* Loading / empty / table */}
       {loading ? (
-        <p className="text-gray-500">Cargando usuarios...</p>
+        <div className="flex justify-center items-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <span className="ml-3 text-gray-600">Cargando usuarios...</span>
+          </div>
       ) : usuarios.length === 0 ? (
         <div className="text-center py-8 text-gray-500">
           <p className="text-lg">No se encontraron usuarios</p>
@@ -650,7 +653,7 @@ export default function AdminUsuariosPage() {
         <table className="w-full border-collapse border">
           <thead>
             <tr className="bg-gray-200">
-              <th className="border p-2 text-left">ID</th>
+              <th className="border p-2 text-left">Legajo</th>
               <th className="border p-2 text-left">Nombre</th>
               <th className="border p-2 text-left">Email</th>
               <th className="border p-2 text-left">Roles</th>

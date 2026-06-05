@@ -35,6 +35,7 @@ class ProductoCreate(SQLModel):
     descripcion: Optional[str] = None
     receta: Optional[str] = None
     precio_base: Decimal = Decimal('0.00')
+    precio_actual: Optional[Decimal] = None
     imagenes_url: List[str] = []
     stock_cantidad: int = 0
     tiempo_prep_min: int = 0
@@ -62,6 +63,7 @@ class ProductoUpdate(SQLModel):
     descripcion: Optional[str] = None
     receta: Optional[str] = None
     precio_base: Optional[Decimal] = None
+    precio_actual: Optional[Decimal] = None
     stock_cantidad: Optional[int] = None
     tiempo_prep_min: Optional[int] = None
     disponible: Optional[bool] = None
@@ -80,6 +82,7 @@ class ProductoRead(SQLModel):
     descripcion: Optional[str] = None
     receta: Optional[str] = None
     precio_base: Decimal
+    precio_actual: Decimal
     imagenes_url: List[str] = []
     stock_cantidad: int = 0
     tiempo_prep_min: int = 0

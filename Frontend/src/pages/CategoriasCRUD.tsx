@@ -208,12 +208,12 @@ function ParentSelector({ treeData, currentId, onSelect, onClose }: {
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white rounded p-6 w-full max-w-md max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold">Seleccionar Categoria Padre</h2>
+          <h2 className="text-lg font-bold">Seleccionar Categoria superior</h2>
           <button onClick={onClose} className="text-gray-500 text-xl cursor-pointer">X</button>
         </div>
         {/* Option to make this a root category (no parent) */}
         <button onClick={() => onSelect(null, "")}
-          className="mb-4 bg-gray-600 text-white px-4 py-1 rounded cursor-pointer hover:bg-gray-700">Sin Padre</button>
+          className="mb-4 bg-gray-600 text-white px-4 py-1 rounded cursor-pointer hover:bg-gray-700">Ninguna (raiz)</button>
         <table className="w-full border-collapse border">
           <thead><tr className="bg-gray-200">
             <th className="border p-2 text-left">Nombre</th>
@@ -248,6 +248,13 @@ export default function CategoriasCRUD() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [selectedParentName, setSelectedParentName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [mensaje, setMensaje] = useState<{tipo: 'exito' | 'error'; texto: string} | null>(null);
+
+  const mostrarMensaje = (tipo: 'exito' | 'error', texto: string) => {
+    setMensaje({ tipo, texto });
+    setTimeout(() => setMensaje(null), 3000);
+  };
 
   /**
    * TanStack Form for creating/editing a single category.
@@ -256,16 +263,21 @@ export default function CategoriasCRUD() {
   const form = useAppForm<CategoriaCreate>({
     defaultValues: { nombre: "", descripcion: "", parent_id: null, orden_display: 0 },
     onSubmit: async ({ value }) => {
+      setSubmitting(true);
       try {
         if (editingId) {
           await categoriasApi.update(editingId, value);
+          mostrarMensaje('exito', 'Categoria actualizada correctamente');
         } else {
           await categoriasApi.create(value);
+          mostrarMensaje('exito', 'Categoria creada correctamente');
         }
         handleCloseForm();
         loadTree();
       } catch (err) {
         setError((err as Error).message);
+      } finally {
+        setSubmitting(false);
       }
     },
   });
@@ -273,10 +285,13 @@ export default function CategoriasCRUD() {
 
   const formRef = useRef<HTMLFormElement>(null);
 
-  // Scroll the form into view when it opens (useful on mobile)
+  // Auto-clear error after 3 seconds
   useEffect(() => {
-    if (showForm) formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [showForm]);
+    if (error) {
+      const timer = setTimeout(() => setError(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
 
   /** Fetches the full category tree from the backend. */
   const loadTree = useCallback(async () => {
@@ -352,6 +367,7 @@ export default function CategoriasCRUD() {
     if (!confirm("Eliminar esta categoria?")) return;
     try {
       await categoriasApi.delete(id);
+      mostrarMensaje('exito', 'Categoria eliminada correctamente');
       loadTree();
     } catch (err) {
       setError((err as Error).message);
@@ -368,6 +384,11 @@ export default function CategoriasCRUD() {
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">Categorias</h1>
       {error && <div className="bg-red-100 text-red-700 p-2 mb-4 rounded">{error}</div>}
+      {mensaje && (
+        <div className={`p-3 mb-4 rounded ${mensaje.tipo === 'exito' ? 'bg-green-100 text-green-800 border border-green-400' : 'bg-red-100 text-red-800 border border-red-400'}`}>
+          {mensaje.texto}
+        </div>
+      )}
 
       {/* Toolbar: filter input + action buttons */}
       <div className="flex gap-2 mb-4 flex-wrap items-center">
@@ -378,7 +399,7 @@ export default function CategoriasCRUD() {
         <button onClick={handleCreate}
           className="bg-green-600 text-white px-4 py-1.5 rounded cursor-pointer hover:bg-green-700">+ Nueva</button>
         <button onClick={() => exportToExcel(flatForExport.map(({ id, nombre, descripcion, parent_id, orden_display, depth }) => ({
-              id, nombre, descripcion: descripcion ?? "", parent_id: parent_id ?? "", orden_display, profundidad: depth,
+              Codigo: id, nombre, descripcion: descripcion ?? "", "Categoria padre": parent_id ?? "", Orden: orden_display, profundidad: depth,
             })), "categorias")}
           className="bg-blue-600 text-white px-4 py-1.5 rounded cursor-pointer hover:bg-blue-700">Exportar Excel</button>
       </div>
@@ -416,7 +437,7 @@ export default function CategoriasCRUD() {
           <div>
             <label className="block text-sm font-medium">Es una subcategoria de:</label>
             <div className="flex gap-2">
-              <input value={selectedParentName} readOnly className="border px-2 py-1 rounded flex-1" placeholder="Sin padre" />
+              <input value={selectedParentName} readOnly className="border px-2 py-1 rounded flex-1" placeholder="Ninguna" />
               <button type="button" onClick={() => setShowParentSelector(true)}
                 className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer hover:bg-blue-700">Seleccionar</button>
             </div>
@@ -424,8 +445,8 @@ export default function CategoriasCRUD() {
 
 
           <div className="col-span-2 flex gap-2 mt-2">
-            <button type="submit" className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer hover:bg-blue-700">
-              {editingId ? "Actualizar" : "Crear"}</button>
+            <button type="submit" disabled={submitting} className={`px-4 py-1 rounded cursor-pointer ${submitting ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'} text-white`}>
+              {submitting ? "Guardando..." : editingId ? "Actualizar" : "Crear"}</button>
             <button type="button" onClick={handleCloseForm}
               className="bg-gray-400 text-white px-4 py-1 rounded cursor-pointer hover:bg-gray-500">Cancelar</button>
           </div>
@@ -450,6 +471,7 @@ export default function CategoriasCRUD() {
       {loading ? (
         <p className="text-gray-500">Cargando...</p>
       ) : (
+        <div className="max-h-96 overflow-auto">
         <table className="w-full border-collapse border">
           <thead><tr className="bg-gray-200">
             <th className="border p-2 text-left">Nombre</th>
@@ -474,6 +496,7 @@ export default function CategoriasCRUD() {
             )}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

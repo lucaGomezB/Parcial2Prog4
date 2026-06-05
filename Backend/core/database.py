@@ -22,8 +22,10 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Global engine instance shared across the application.
-# echo=True enables SQL logging for debugging; disable in production.
-engine = create_engine(DATABASE_URL, echo=True)
+# echo=True enables SQL logging for debugging.
+# Toggle via env var: SQL_ECHO=true or set echo=True directly.
+SQL_ECHO = os.getenv("SQL_ECHO", "false").lower() == "true"
+engine = create_engine(DATABASE_URL, echo=SQL_ECHO)
 
 
 def get_session():

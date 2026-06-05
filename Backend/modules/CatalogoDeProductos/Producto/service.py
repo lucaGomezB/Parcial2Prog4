@@ -39,6 +39,17 @@ class ProductoService:
             if db_producto.stock_cantidad == 0:
                 db_producto.disponible = False
 
+            # Set precio_actual default to precio_base if not provided
+            if db_producto.precio_actual is None or db_producto.precio_actual == 0:
+                db_producto.precio_actual = db_producto.precio_base
+
+            # Validate: precio_actual must not be lower than precio_base
+            if db_producto.precio_actual < db_producto.precio_base:
+                raise HTTPException(
+                    status_code=400,
+                    detail="El precio actual no puede ser menor al precio base"
+                )
+
             # Validate price: must be > 0 when the product has no ingredients
             # and is not marked as an insumo (resold item with manual price).
             if not data.es_insumo and (not data.ingredientes) and db_producto.precio_base <= 0:
@@ -108,6 +119,11 @@ class ProductoService:
                 total += ing.precio_actual * Decimal(pi.cantidad)
 
         db_producto.precio_base = total
+
+        # Ensure precio_actual is not lower than the recalculated precio_base
+        if db_producto.precio_actual < db_producto.precio_base:
+            db_producto.precio_actual = db_producto.precio_base
+
         session.add(db_producto)
 
     @staticmethod
@@ -251,6 +267,13 @@ class ProductoService:
             if db_producto.stock_cantidad == 0:
                 db_producto.disponible = False
 
+            # Validate: if precio_actual was updated, it must not be lower than precio_base
+            if 'precio_actual' in values and db_producto.precio_actual < db_producto.precio_base:
+                raise HTTPException(
+                    status_code=400,
+                    detail="El precio actual no puede ser menor al precio base"
+                )
+
             # Validate price after updates: must be > 0 when the product
             # has no ingredients and is not an insumo (resold item).
             if not db_producto.es_insumo and not db_producto.ingredientes and db_producto.precio_base <= 0:
@@ -316,10 +339,10 @@ class ProductoService:
 
     @staticmethod
     def remove_ingrediente(session: Session, producto_id: int, ingrediente_id: int):
-        """Remove an ingredient association and recalculate the price."""
+        """Remove an ingredient association and recalculate price."""
         with CatalogoDeProductosUnitOfWork(session) as uow:
             result = uow.productos.delete_ingrediente_relacion(producto_id, ingrediente_id)
-            if result and db_producto and not db_producto.es_insumo:
+            if result:
                 # Recalculate price after ingredient removal
                 ProductoService._recalcular_precio_producto(session, producto_id)
             return result
@@ -342,9 +365,8 @@ class ProductoService:
             pi.cantidad = cantidad
             session.add(pi)
 
-            # Recalculate price after quantity change (skip for insumo)
-            if db_producto and not db_producto.es_insumo:
-                ProductoService._recalcular_precio_producto(session, producto_id)
+            # Recalculate price after quantity change
+            ProductoService._recalcular_precio_producto(session, producto_id)
 
             return uow.productos.get_ingredientes(producto_id)
 

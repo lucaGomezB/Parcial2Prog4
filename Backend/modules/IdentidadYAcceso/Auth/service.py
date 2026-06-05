@@ -85,8 +85,14 @@ def validate_refresh_token(session: Session, raw_token: str) -> Optional[Refresh
     Looks up the hash in the database and verifies the token is
     neither expired nor revoked. Returns the RefreshToken object
     if valid, None otherwise.
+
+    NOTE: The hash is computed from the RAW BINARY bytes (not the hex string)
+    to match how create_refresh_token stores it:
+        token_bytes = secrets.token_bytes(32)
+        token_hash = sha256(token_bytes).hexdigest()  # hash of 32 raw bytes
     """
-    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    raw_bytes = bytes.fromhex(raw_token)
+    token_hash = hashlib.sha256(raw_bytes).hexdigest()
     with IdentidadYAccesoUnitOfWork(session) as uow:
         return uow.refresh_tokens.get_by_hash(token_hash)
 
@@ -101,7 +107,8 @@ def revoke_refresh_token(session: Session, raw_token: str) -> bool:
 
     Returns True if the token was found and revoked, False otherwise.
     """
-    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    raw_bytes = bytes.fromhex(raw_token)
+    token_hash = hashlib.sha256(raw_bytes).hexdigest()
     with IdentidadYAccesoUnitOfWork(session) as uow:
         stored = uow.refresh_tokens.get_by_hash(token_hash)
         if not stored:

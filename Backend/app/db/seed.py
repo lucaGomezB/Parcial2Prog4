@@ -67,10 +67,10 @@ USERS_SEED = [
 
 # Default delivery addresses for each seed user
 DIRECCIONES_SEED = [
-    {"email": "admin@email.com",   "alias": "Principal", "linea1": "Av. Siempre Viva 123",      "ciudad": "Mendoza",   "es_principal": True},
-    {"email": "stock@email.com",   "alias": "Principal", "linea1": "Calle falsa 456",            "ciudad": "Mendoza",   "es_principal": True},
-    {"email": "pedidos@email.com", "alias": "Principal", "linea1": "Av. del Libertador 789",     "ciudad": "Godoy Cruz", "es_principal": True},
-    {"email": "client@email.com",  "alias": "Principal", "linea1": "Av. Festa 1233",             "ciudad": "Mendoza",   "es_principal": True},
+    {"email": "admin@email.com",   "alias": "Principal", "linea1": "Av. Siempre Viva 123",  "linea2": None, "ciudad": "Mendoza",   "provincia": "Mendoza", "codigo_postal": "5500", "es_principal": True},
+    {"email": "stock@email.com",   "alias": "Principal", "linea1": "Calle falsa 456",        "linea2": None, "ciudad": "Mendoza",   "provincia": "Mendoza", "codigo_postal": "5500", "es_principal": True},
+    {"email": "pedidos@email.com", "alias": "Principal", "linea1": "Av. del Libertador 789", "linea2": None, "ciudad": "Godoy Cruz", "provincia": "Mendoza", "codigo_postal": "5501", "es_principal": True},
+    {"email": "client@email.com",  "alias": "Principal", "linea1": "Av. Festa 1233",         "linea2": None, "ciudad": "Mendoza",   "provincia": "Mendoza", "codigo_postal": "5500", "es_principal": True},
 ]
 
 # Hierarchical product categories with display ordering.
@@ -91,37 +91,37 @@ CATEGORIAS_SEED = [
 # Ingredients with stock levels, prices, and allergen flags.
 # es_alergeno=True means this ingredient is a common allergen.
 INGREDIENTES_SEED = [
-    ("Pan de Hamburguesa x und",     False, Decimal("50"),   500),
-    ("Pan de Miga x und",           False, Decimal("60"),   300),
-    ("Pan Ciabatta x und",          False, Decimal("80"),   200),
-    ("Medallón de Carne Res x und", False, Decimal("200"),  200),
-    ("Pechuga de Pollo x kg",       False, Decimal("1800"), 50),
-    ("Queso Cheddar x kg",          True,  Decimal("800"),  30),
-    ("Queso Mozzarella x kg",       True,  Decimal("900"),  25),
-    ("Lechuga x und",               False, Decimal("30"),   150),
-    ("Tomate x kg",                 False, Decimal("250"),  18),
-    ("Cebolla x kg",                False, Decimal("200"),  20),
-    ("Huevo x docena",              True,  Decimal("180"),  50),
-    ("Mayonesa x 1 lt",             True,  Decimal("400"),  20),
-    ("Mostaza x 1 lt",              False, Decimal("350"),  15),
-    ("Ketchup x 1 lt",              False, Decimal("300"),  20),
-    ("Papa x kg",                   False, Decimal("450"),  60),
-    ("Aceite Girasol x 1 lt",       False, Decimal("600"),  20),
-    ("Sal Fina x 1 kg",             False, Decimal("100"),  20),
-    ("Café Molido x 1/2 kg",        False, Decimal("1500"), 10),
-    ("Cartón de Leche Entera 1 lt", True,  Decimal("700"),  30),
-    ("Crema de Leche x 1 lt",       True,  Decimal("900"),  15),
-    ("Chocolate cobertura x kg",    True,  Decimal("1200"), 10),
-    ("Paquete de Harina 0000 1 kg", True,  Decimal("400"),  40),
-    ("Azúcar x kg",                 False, Decimal("350"),  30),
-    ("Agua mineral x 1 lt",         False, Decimal("50"),   200),
-    ("Gasificación x 1 lt",         False, Decimal("100"),  50),
-    ("Levadura x 100 gr",           False, Decimal("250"),  20),
-    ("Manteca x 200 gr",            True,  Decimal("800"),  15),
-    ("Dulce de Leche x 1 kg",       True,  Decimal("1100"), 10),
-    ("Esencia de Vainilla x 50 ml", False, Decimal("200"),  20),
-    ("Hielo x bolsa 2 kg",          False, Decimal("50"),   100),
-    ("Jamón Cocido x kg",           False, Decimal("1200"), 15),
+    ("Pan de Hamburguesa x und",     "Pan suave para hamburguesas, unidad",                                 False, Decimal("50"),   500),
+    ("Pan de Miga x und",           "Pan de miga para sandwich, unidad",                                    False, Decimal("60"),   300),
+    ("Pan Ciabatta x und",          "Pan italiano tipo ciabatta, unidad",                                   False, Decimal("80"),   200),
+    ("Medallón de Carne Res x und", "Medallón de carne vacuna, unidad",                                     False, Decimal("200"),  200),
+    ("Pechuga de Pollo x kg",       "Pechuga de pollo fresca, por kilogramo",                               False, Decimal("1800"), 50),
+    ("Queso Cheddar x kg",          "Queso cheddar, por kilogramo",                                         True,  Decimal("800"),  30),
+    ("Queso Mozzarella x kg",       "Queso mozzarella, por kilogramo",                                      True,  Decimal("900"),  25),
+    ("Lechuga x und",               "Lechuga fresca, unidad",                                               False, Decimal("30"),   150),
+    ("Tomate x kg",                 "Tomate fresco, por kilogramo",                                         False, Decimal("250"),  18),
+    ("Cebolla x kg",                "Cebolla fresca, por kilogramo",                                        False, Decimal("200"),  20),
+    ("Huevo x docena",              "Huevo fresco, por docena",                                             True,  Decimal("180"),  50),
+    ("Mayonesa x 1 lt",             "Mayonesa, por litro",                                                  True,  Decimal("400"),  20),
+    ("Mostaza x 1 lt",              "Mostaza, por litro",                                                   False, Decimal("350"),  15),
+    ("Ketchup x 1 lt",              "Kétchup, por litro",                                                   False, Decimal("300"),  20),
+    ("Papa x kg",                   "Papa fresca, por kilogramo",                                           False, Decimal("450"),  60),
+    ("Aceite Girasol x 1 lt",       "Aceite de girasol, por litro",                                         False, Decimal("600"),  20),
+    ("Sal Fina x 1 kg",             "Sal fina, por kilogramo",                                              False, Decimal("100"),  20),
+    ("Café Molido x 1/2 kg",        "Café molido, por medio kilogramo",                                     False, Decimal("1500"), 10),
+    ("Cartón de Leche Entera 1 lt", "Leche entera pasteurizada, por litro",                                 True,  Decimal("700"),  30),
+    ("Crema de Leche x 1 lt",       "Crema de leche, por litro",                                            True,  Decimal("900"),  15),
+    ("Chocolate cobertura x kg",    "Chocolate para cobertura, por kilogramo",                              True,  Decimal("1200"), 10),
+    ("Paquete de Harina 0000 1 kg", "Harina 0000, por kilogramo",                                           True,  Decimal("400"),  40),
+    ("Azúcar x kg",                 "Azúcar refinada, por kilogramo",                                       False, Decimal("350"),  30),
+    ("Agua mineral x 1 lt",         "Agua mineral sin gas, por litro",                                      False, Decimal("50"),   200),
+    ("Gasificación x 1 lt",         "Agua gasificada, por litro",                                           False, Decimal("100"),  50),
+    ("Levadura x 100 gr",           "Levadura fresca, por 100 gramos",                                      False, Decimal("250"),  20),
+    ("Manteca x 200 gr",            "Manteca, por 200 gramos",                                              True,  Decimal("800"),  15),
+    ("Dulce de Leche x 1 kg",       "Dulce de leche, por kilogramo",                                        True,  Decimal("1100"), 10),
+    ("Esencia de Vainilla x 50 ml", "Esencia de vainilla, por 50 mililitros",                               False, Decimal("200"),  20),
+    ("Hielo x bolsa 2 kg",          "Hielo en bolsa, por 2 kilogramos",                                     False, Decimal("50"),   100),
+    ("Jamón Cocido x kg",           "Jamón cocido, por kilogramo",                                          False, Decimal("1200"), 15),
 ]
 
 # Products with their category assignments and ingredient compositions.
@@ -132,28 +132,32 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Coca Cola 500ml",
         descripcion="Gaseosa sabor cola 500ml",
-        precio=Decimal("1200.00"), tiempo=1, disponible=True, stock_cantidad=200,
+        precio=Decimal("1200.00"), precio_actual=Decimal("1200.00"), tiempo=1, disponible=True, stock_cantidad=200,
+        receta=None, imagenes_url=[], es_insumo=False,
         categorias=[("Bebidas Frías", True)],
         ingredientes=[],
     ),
     dict(
         nombre="Coca Cola 1L",
         descripcion="Gaseosa sabor cola 1 litro",
-        precio=Decimal("1800.00"), tiempo=1, disponible=True, stock_cantidad=150,
+        precio=Decimal("1800.00"), precio_actual=Decimal("1800.00"), tiempo=1, disponible=True, stock_cantidad=150,
+        receta=None, imagenes_url=[], es_insumo=False,
         categorias=[("Bebidas Frías", True)],
         ingredientes=[],
     ),
     dict(
         nombre="Coca Cola 2L",
         descripcion="Gaseosa sabor cola 2 litros",
-        precio=Decimal("2500.00"), tiempo=1, disponible=True, stock_cantidad=100,
+        precio=Decimal("2500.00"), precio_actual=Decimal("2500.00"), tiempo=1, disponible=True, stock_cantidad=100,
+        receta=None, imagenes_url=[], es_insumo=False,
         categorias=[("Bebidas Frías", True)],
         ingredientes=[],
     ),
     dict(
         nombre="Agua Mineral 500ml",
         descripcion="Agua mineral sin gas 500ml",
-        precio=Decimal("600.00"), tiempo=1, disponible=True, stock_cantidad=300,
+        precio=Decimal("600.00"), precio_actual=Decimal("600.00"), tiempo=1, disponible=True, stock_cantidad=300,
+        receta=None, imagenes_url=[], es_insumo=False,
         categorias=[("Bebidas Frías", True)],
         ingredientes=[],
     ),
@@ -161,7 +165,8 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Café con Leche",
         descripcion="Café expreso con leche cremada",
-        precio=Decimal("1500.00"), tiempo=5, disponible=True, stock_cantidad=150,
+        precio=Decimal("1500.00"), precio_actual=Decimal("1500.00"), tiempo=5, disponible=True, stock_cantidad=150,
+        receta="Café expreso combinado con leche entera cremada", imagenes_url=[], es_insumo=False,
         categorias=[("Bebidas Calientes", True)],
         ingredientes=[
             ("Café Molido x 1/2 kg", False, True, 1, 1),
@@ -171,7 +176,8 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Hamburguesa Clásica",
         descripcion="Medallón de res, cheddar, lechuga y tomate",
-        precio=Decimal("4500.00"), tiempo=12, disponible=True, stock_cantidad=100,
+        precio=Decimal("4500.00"), precio_actual=Decimal("4500.00"), tiempo=12, disponible=True, stock_cantidad=100,
+        receta="Medallón de res a la parrilla con queso cheddar, lechuga fresca y tomate en pan de hamburguesa", imagenes_url=[], es_insumo=False,
         categorias=[("Sandwichs Calientes", True)],
         ingredientes=[
             ("Pan de Hamburguesa x und", False, False, 1, 1),
@@ -184,7 +190,8 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Sandwich de Miga (Jamón y Queso)",
         descripcion="Triple de jamón cocido, queso y mayonesa",
-        precio=Decimal("2800.00"), tiempo=5, disponible=True, stock_cantidad=80,
+        precio=Decimal("2800.00"), precio_actual=Decimal("2800.00"), tiempo=5, disponible=True, stock_cantidad=80,
+        receta="Capas de pan de miga con jamón cocido, queso mozzarella y mayonesa", imagenes_url=[], es_insumo=False,
         categorias=[("Sandwichs Fríos", True)],
         ingredientes=[
             ("Pan de Miga x und", False, False, 1, 2),
@@ -196,7 +203,8 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Papas Fritas Grandes",
         descripcion="Porción de papas fritas crocantes",
-        precio=Decimal("2200.00"), tiempo=8, disponible=True, stock_cantidad=120,
+        precio=Decimal("2200.00"), precio_actual=Decimal("2200.00"), tiempo=8, disponible=True, stock_cantidad=120,
+        receta="Papas cortadas en bastón fritas en aceite de girasol y sazonadas con sal", imagenes_url=[], es_insumo=False,
         categorias=[("Guarniciones", True)],
         ingredientes=[
             ("Papa x kg", False, True, 1, 1),
@@ -207,7 +215,8 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Flan con Dulce de Leche",
         descripcion="Flan casero con dulce de leche y crema",
-        precio=Decimal("2500.00"), tiempo=2, disponible=True, stock_cantidad=60,
+        precio=Decimal("2500.00"), precio_actual=Decimal("2500.00"), tiempo=2, disponible=True, stock_cantidad=60,
+        receta="Flan casero a base de huevo, leche y esencia de vainilla, servido con dulce de leche y crema", imagenes_url=[], es_insumo=False,
         categorias=[("Postres", True)],
         ingredientes=[
             ("Huevo x docena", False, True, 1, 1),
@@ -219,7 +228,8 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Pizza Muzzarella",
         descripcion="Pizza clásica con mozzarella y salsa",
-        precio=Decimal("3000.00"), tiempo=15, disponible=True, stock_cantidad=90,
+        precio=Decimal("3000.00"), precio_actual=Decimal("3000.00"), tiempo=15, disponible=True, stock_cantidad=90,
+        receta="Masa de pizza con salsa de tomate y queso mozzarella, horneada", imagenes_url=[], es_insumo=False,
         categorias=[("Pizzas", True)],
         ingredientes=[
             ("Paquete de Harina 0000 1 kg", False, False, 1, 1),
@@ -230,7 +240,8 @@ PRODUCTOS_SEED = [
     dict(
         nombre="Tarta de Jamón y Queso",
         descripcion="Tarta rellena de jamón cocido y queso",
-        precio=Decimal("2500.00"), tiempo=12, disponible=True, stock_cantidad=70,
+        precio=Decimal("2500.00"), precio_actual=Decimal("2500.00"), tiempo=12, disponible=True, stock_cantidad=70,
+        receta="Masa de tarta rellena de jamón cocido, queso mozzarella y huevo", imagenes_url=[], es_insumo=False,
         categorias=[("Tartas", True)],
         ingredientes=[
             ("Paquete de Harina 0000 1 kg", False, True, 1, 1),
@@ -353,7 +364,10 @@ def seed_direcciones(session: Session):
             usuario_id=usuario.id,
             alias=dir_data["alias"],
             linea1=dir_data["linea1"],
+            linea2=dir_data.get("linea2"),
             ciudad=dir_data["ciudad"],
+            provincia=dir_data.get("provincia"),
+            codigo_postal=dir_data.get("codigo_postal"),
             es_principal=dir_data["es_principal"],
         )
         session.add(direccion)
@@ -403,13 +417,14 @@ def seed_ingredientes(session: Session):
     Idempotent: skips ingredients that already exist (matched by name).
     Each ingredient tracks current stock, unit price, and allergen status.
     """
-    for nombre, alergeno, precio, stock in INGREDIENTES_SEED:
+    for nombre, descripcion, alergeno, precio, stock in INGREDIENTES_SEED:
         existing = _get_by_name(session, Ingrediente, nombre)
         if existing:
             continue
 
         ing = Ingrediente(
             nombre=nombre,
+            descripcion=descripcion,
             es_alergeno=alergeno,
             precio_actual=precio,
             stock_actual=stock,
@@ -440,10 +455,14 @@ def seed_productos(session: Session):
         producto = Producto(
             nombre=prod_data["nombre"],
             descripcion=prod_data["descripcion"],
+            receta=prod_data.get("receta"),
             precio_base=prod_data["precio"],
+            precio_actual=prod_data.get("precio_actual", prod_data["precio"]),
+            imagenes_url=prod_data.get("imagenes_url", []),
             stock_cantidad=stock_cantidad,
             tiempo_prep_min=prod_data["tiempo"],
             disponible=disponible,
+            es_insumo=prod_data.get("es_insumo", False),
         )
         session.add(producto)
         session.flush()

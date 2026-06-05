@@ -12,7 +12,7 @@
  * State management: useReducer for the data grid, TanStack Form for create/edit.
  */
 
-import { useReducer, useEffect, useCallback } from "react";
+import { useReducer, useEffect, useCallback, useState } from "react";
 import { AxiosError } from "axios";
 import type { Ingrediente, IngredienteCreate } from "../api/ingredientes";
 import { ingredientesApi } from "../api/ingredientes";
@@ -100,6 +100,12 @@ const init: State = {
 
 export default function IngredientesCRUD() {
   const [state, dispatch] = useReducer(reducer, init);
+  const [mensaje, setMensaje] = useState<{tipo: 'exito' | 'error'; texto: string} | null>(null);
+
+  const mostrarMensaje = (tipo: 'exito' | 'error', texto: string) => {
+    setMensaje({ tipo, texto });
+    setTimeout(() => setMensaje(null), 3000);
+  };
 
   /** Fetches the current page of ingredients from the backend. */
   const fetchData = useCallback(async () => {
@@ -127,6 +133,7 @@ export default function IngredientesCRUD() {
         } else {
           await ingredientesApi.create(value);
         }
+        mostrarMensaje('exito', 'Insumo guardado correctamente');
         dispatch({ type: "CLOSE_FORM" });
         fetchData();
       } catch (err) {
@@ -174,9 +181,9 @@ export default function IngredientesCRUD() {
         .map(({ id, nombre, es_alergeno, precio_actual, stock_actual }) => ({
           id,
           nombre,
-          es_alergeno: es_alergeno ? "Si" : "No",
-          precio_actual: `$${Number(precio_actual).toFixed(2)}`,
-          stock_actual,
+          "Es alergeno?": es_alergeno ? "Si" : "No",
+          Precio: `$${Number(precio_actual).toFixed(2)}`,
+          Stock: stock_actual,
         }));
 
       if (exportData.length === 0) {
@@ -197,6 +204,7 @@ export default function IngredientesCRUD() {
     if (!confirm("Eliminar este ingrediente?")) return;
     try {
       await ingredientesApi.delete(id);
+      mostrarMensaje('exito', 'Insumo eliminado');
       fetchData();
     } catch (err) {
       dispatch({ type: "SET_ERROR", payload: (err as Error).message });
@@ -210,6 +218,7 @@ export default function IngredientesCRUD() {
     if (isNaN(val) || val < 0) return;
     try {
       await ingredientesApi.updateStock(id, val);
+      mostrarMensaje('exito', 'Stock actualizado');
       dispatch({ type: "CANCEL_INLINE_STOCK" });
       fetchData();
     } catch (err) {
@@ -224,6 +233,7 @@ export default function IngredientesCRUD() {
     if (isNaN(val) || val < 0) return;
     try {
       await ingredientesApi.updatePrecio(id, val);
+      mostrarMensaje('exito', 'Precio actualizado');
       dispatch({ type: "CANCEL_INLINE_PRECIO" });
       fetchData();
     } catch (err) {
@@ -240,6 +250,11 @@ export default function IngredientesCRUD() {
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">Insumos</h1>
       {state.error && <div className="bg-red-100 text-red-700 p-2 mb-4 rounded">{state.error}</div>}
+      {mensaje && (
+        <div className={`p-3 mb-4 rounded ${mensaje.tipo === 'exito' ? 'bg-green-100 text-green-800 border border-green-400' : 'bg-red-100 text-red-800 border border-red-400'}`}>
+          {mensaje.texto}
+        </div>
+      )}
       {/* Toolbar: filter, create, export */}
       <div className="flex gap-2 mb-4 flex-wrap">
         <input type="text" placeholder="Filtrar por nombre..." value={state.filter}
@@ -314,9 +329,9 @@ export default function IngredientesCRUD() {
       {state.loading ? <p>Cargando...</p> : (
         <table className="w-full border-collapse border">
           <thead><tr className="bg-gray-200">
-            <th className="border p-2 text-left">ID</th>
+            <th className="border p-2 text-left">Codigo</th>
             <th className="border p-2 text-left">Nombre</th>
-            <th className="border p-2 text-left">Alergeno</th>
+            <th className="border p-2 text-left">Es alergeno?</th>
             <th className="border p-2 text-left">Precio</th>
             <th className="border p-2 text-left">Stock</th>
             <th className="border p-2 text-left">Acciones</th>
@@ -375,7 +390,7 @@ export default function IngredientesCRUD() {
                 </td>
               </tr>
             ))}
-            {filtered.length === 0 && <tr><td colSpan={6} className="border p-2 text-center text-gray-500">Sin resultados</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={6} className="border p-2 text-center text-gray-500">{state.filter ? "Sin resultados para el filtro" : "No hay insumos cargados"}</td></tr>}
           </tbody>
         </table>
       )}

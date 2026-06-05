@@ -42,7 +42,7 @@ def _set_refresh_cookie(response: Response, token: str):
     Configuration:
     - httponly=True: prevents JavaScript access (XSS protection).
     - samesite="lax": CSRF protection (cookie sent only for same-site requests).
-    - path="/api/auth/refresh": cookie only sent to the refresh endpoint.
+    - path="/": cookie sent on all requests (including Vite proxy path /api/...).
     - max_age: cookie lifetime in seconds (matches token lifetime).
     """
     response.set_cookie(
@@ -51,7 +51,7 @@ def _set_refresh_cookie(response: Response, token: str):
         httponly=True,
         samesite="lax",
         max_age=COOKIE_MAX_AGE,
-        path="/api/auth/refresh",
+        path="/",
     )
 
 
@@ -64,7 +64,7 @@ def _clear_refresh_cookie(response: Response):
     """
     response.delete_cookie(
         key="refresh_token",
-        path="/api/auth/refresh",
+        path="/",
     )
 
 

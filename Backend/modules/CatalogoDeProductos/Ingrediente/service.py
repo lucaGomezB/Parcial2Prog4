@@ -30,7 +30,7 @@ class IngredienteService:
             db_ingrediente = Ingrediente.model_validate(data)
             uow.ingredientes.add(db_ingrediente)
             try:
-                pass
+                uow.flush()
             except IntegrityError:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,

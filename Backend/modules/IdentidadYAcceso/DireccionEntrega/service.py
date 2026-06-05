@@ -53,6 +53,7 @@ class DireccionEntregaService:
                 es_principal=data.es_principal,
             )
             uow.direcciones.add(db_direccion)
+            uow.flush()
             uow.direcciones.refresh(db_direccion)
             return db_direccion
 

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import CategoriasCRUD from './pages/CategoriasCRUD'
 import IngredientesCRUD from './pages/IngredientesCRUD'
 import ProductosCRUD from './pages/ProductosCRUD'
+import ProductosCliente from './pages/ProductosCliente'
 import Carrito from './pages/Carrito'
 import PedidosPage from './pages/PedidosPage'
 import DireccionesPage from './pages/DireccionesPage'
@@ -226,7 +227,7 @@ function App() {
               return (
                 <>
                   <Route path="/" element={<Navigate to="/productos" replace />} />
-                  <Route path="/productos" element={<ProductosCRUD role={productRole} />} />
+                  <Route path="/productos" element={<ProductosCliente />} />
                   {!isGuest && <Route path="/carrito" element={<Carrito />} />}
                   <Route path="/pedidos" element={<PedidosPage />} />
                   <Route path="/direcciones" element={<DireccionesPage />} />
@@ -258,7 +259,9 @@ function App() {
                 <Route path="/categorias" element={<CategoriasCRUD />} />
                 <Route path="/ingredientes" element={<IngredientesCRUD />} />
                 <Route path="/admin/usuarios" element={<AdminUsuariosPage />} />
-                <Route path="/productos" element={<ProductosCRUD role={productRole} />} />
+                <Route path="/productos" element={
+                  productRole === 'client' ? <ProductosCliente /> : <ProductosCRUD role={productRole} />
+                } />
                 {!isGuest && <Route path="/carrito" element={<Carrito />} />}
                 <Route path="/pedidos" element={<PedidosPage />} />
                 <Route path="/direcciones" element={<DireccionesPage />} />

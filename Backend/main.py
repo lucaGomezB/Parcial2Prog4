@@ -5,24 +5,23 @@ Implements the application lifespan pattern for managing startup and shutdown
 lifecycle events. The lifespan context manager handles Alembic migrations,
 database seeding, and cleanup tasks automatically when the app starts.
 
-Uses a single global SQLModel engine created from DATABASE_URL environment
-variable. Router inclusion follows a modular architecture where each domain
-module exposes its own APIRouter.
+The single global SQLModel engine lives in core.database and is imported here.
+Router inclusion follows a modular architecture where each domain module
+exposes its own APIRouter.
 """
 
 import logging
-import os
 from decimal import Decimal
 from contextlib import asynccontextmanager
-from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
-from sqlmodel import create_engine, Session
+from sqlmodel import Session
 from alembic.config import Config
 from alembic import command
+from core.database import engine
 from core.rate_limit import limiter
 from modules.CatalogoDeProductos.Categoria.router import router as categoria_router
 from modules.CatalogoDeProductos.Producto.router import router as producto_router
@@ -33,6 +32,8 @@ from modules.IdentidadYAcceso.Rol.router import router as rol_router
 from modules.IdentidadYAcceso.DireccionEntrega.router import router as direccion_router
 from modules.VentasPagosTrazabilidad.FormaPago.router import router as forma_pago_router
 from modules.VentasPagosTrazabilidad.Pedido.router import router as pedido_router
+from modules.VentasPagosTrazabilidad.EstadoPedido.router import router as estado_pedido_router
+from modules.VentasPagosTrazabilidad.HistorialEstadoPedido.router import router as historial_estado_router
 from modules.CatalogoDeProductos.Categoria.models import Categoria
 from modules.CatalogoDeProductos.Producto.models import Producto
 from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
@@ -49,12 +50,6 @@ from modules.VentasPagosTrazabilidad.Pedido.models import Pedido
 from modules.VentasPagosTrazabilidad.DetallePedido.models import DetallePedido
 from modules.VentasPagosTrazabilidad.HistorialEstadoPedido.models import HistorialEstadoPedido
 from modules.VentasPagosTrazabilidad.Pago.models import Pago
-
-# Load environment variables and create the global SQLModel engine
-load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL, echo=True)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -140,8 +135,10 @@ app.include_router(producto_router)
 app.include_router(ingrediente_router)
 
 # Sales, Payments & Tracking module
+app.include_router(estado_pedido_router)
 app.include_router(forma_pago_router)
 app.include_router(pedido_router)
+app.include_router(historial_estado_router)
 
 
 @app.get("/")
