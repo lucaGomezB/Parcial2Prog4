@@ -673,233 +673,6 @@ function CategoriasPopup({ productoId, productoNombre, onClose }: {
   );
 }
 
-/* ── Modal de Creacion por Lotes (Variantes) ── */
-
-/**
- * Modal for bulk-creating product variants from a base name.
- *
- * The user enters a base name (e.g., "Cafe Latte"), then adds rows
- * with size/price/stock (e.g., "Chico", "Grande"). Each row creates
- * a separate product with the name: "{baseName} {variantName}".
- *
- * Categories are shared across all variants.
- * Results are reported: created count + any failures with error messages.
- */
-function CrearVariantesModal({ allCategorias, onClose, onComplete }: {
-  allCategorias: Categoria[];
-  onClose: () => void;
-  onComplete: () => void;
-}) {
-  const [nombreBase, setNombreBase] = useState("");
-  const [variants, setVariants] = useState<{nombre: string; precio: string; stock: string}[]>([
-    {nombre: "", precio: "", stock: "0"}
-  ]);
-  const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([]);
-  const [showCategorySelector, setShowCategorySelector] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<{created: number; failed: {nombre: string; error: string}[]} | null>(null);
-
-  /** Adds a new variant row (max 10). */
-  const addRow = () => {
-    if (variants.length >= 10) return;
-    setVariants([...variants, {nombre: "", precio: "", stock: "0"}]);
-  };
-
-  /** Removes a variant row (minimum 1). */
-  const removeRow = (idx: number) => {
-    if (variants.length <= 1) return;
-    setVariants(variants.filter((_, i) => i !== idx));
-  };
-
-  /**
-   * Submits all variants in parallel via Promise.allSettled.
-   * Reports which succeeded and which failed.
-   * If all succeed, auto-closes the modal.
-   */
-  const handleSubmit = async () => {
-    if (!nombreBase.trim()) { alert("El nombre base es obligatorio"); return; }
-    if (selectedCategoryIds.length === 0) { alert("Seleccione al menos una categoria"); return; }
-
-    const invalidVariant = variants.find(v => !v.nombre.trim() || !v.precio || Number(v.precio) <= 0);
-    if (invalidVariant) { alert("Cada variante debe tener nombre y precio mayor a 0"); return; }
-
-    setSubmitting(true);
-    const results = await Promise.allSettled(
-      variants.map(v =>
-        productosApi.create({
-          nombre: `${nombreBase.trim()} ${v.nombre.trim()}`,
-          precio_base: Number(v.precio),
-          stock_cantidad: Number(v.stock) || 0,
-          categorias_ids: selectedCategoryIds,
-          disponible: true,
-        })
-      )
-    );
-
-    const created = results.filter(r => r.status === "fulfilled").length;
-    const failed = results
-      .map((r, i) => ({r, i}))
-      .filter(({r}) => r.status === "rejected")
-      .map(({r, i}) => ({
-        nombre: `${nombreBase.trim()} ${variants[i].nombre.trim()}`,
-        error: ((r as PromiseRejectedResult).reason as Error)?.message || "Error desconocido"
-      }));
-
-    setResult({created, failed});
-    setSubmitting(false);
-
-    if (failed.length === 0) {
-      onComplete();
-      onClose();
-    }
-  };
-
-  const selectedCategoryNames = allCategorias
-    .filter(c => selectedCategoryIds.includes(c.id))
-    .map(c => c.nombre)
-    .join(", ");
-
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded p-6 w-full max-w-3xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold">Crear Variantes</h2>
-          <button onClick={onClose} className="text-gray-500 text-xl cursor-pointer">X</button>
-        </div>
-
-        {result ? (
-          /* Results view (after submission) */
-          <div>
-            <p className="mb-2">
-              <span className="font-semibold text-green-600">{result.created} creadas</span>
-              {result.failed.length > 0 && (
-                <span className="font-semibold text-red-600 ml-2">
-                  , {result.failed.length} fallaron
-                </span>
-              )}
-            </p>
-            {result.failed.length > 0 && (
-              <div className="mb-4">
-                <h4 className="font-medium text-red-700 mb-1">Errores:</h4>
-                <ul className="list-disc pl-5 text-sm text-red-600">
-                  {result.failed.map((f, i) => (
-                    <li key={i}><strong>{f.nombre}</strong>: {f.error}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <button onClick={onClose}
-              className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer">Cerrar</button>
-          </div>
-        ) : (
-          <>
-            {/* Base name input */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-1">Nombre base</label>
-              <input type="text" value={nombreBase}
-                onChange={(e) => setNombreBase(e.target.value)}
-                placeholder="Ej: Cafe Latte"
-                className="border px-2 py-1 rounded w-full" />
-            </div>
-
-            {/* Category selection */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-1">Categorias</label>
-              <button type="button" onClick={() => setShowCategorySelector(true)}
-                className="bg-blue-600 text-white px-4 py-1 rounded cursor-pointer text-sm">
-                {selectedCategoryIds.length > 0 ? "Cambiar Categorias" : "Seleccionar Categorias"}
-              </button>
-              {selectedCategoryIds.length > 0 && (
-                <p className="text-sm text-gray-600 mt-1">
-                  Seleccionadas: {selectedCategoryNames}
-                </p>
-              )}
-            </div>
-
-            {/* Variant rows table */}
-            <div className="mb-4">
-              <div className="flex justify-between items-center mb-2">
-                <label className="text-sm font-medium">Variantes</label>
-                {variants.length < 10 && (
-                  <button type="button" onClick={addRow}
-                    className="bg-green-600 text-white px-3 py-1 rounded text-sm cursor-pointer">+ Agregar Fila</button>
-                )}
-              </div>
-              <table className="w-full border-collapse border">
-                <thead><tr className="bg-gray-200">
-                  <th className="border p-2 text-left">Nombre del tamano</th>
-                  <th className="border p-2 text-left">Precio</th>
-                  <th className="border p-2 text-left">Stock</th>
-                  <th className="border p-2 text-left">Accion</th>
-                </tr></thead>
-                <tbody>
-                  {variants.map((v, idx) => (
-                    <tr key={idx}>
-                      <td className="border p-2">
-                        <input type="text" value={v.nombre}
-                          onChange={(e) => {
-                            const next = [...variants];
-                            next[idx] = {...next[idx], nombre: e.target.value};
-                            setVariants(next);
-                          }}
-                          placeholder="Ej: Grande"
-                          className="border px-2 py-1 rounded w-full" />
-                      </td>
-                      <td className="border p-2">
-                        <input type="number" step="0.01" value={v.precio}
-                          onChange={(e) => {
-                            const next = [...variants];
-                            next[idx] = {...next[idx], precio: e.target.value};
-                            setVariants(next);
-                          }}
-                          className="border px-2 py-1 rounded w-full" />
-                      </td>
-                      <td className="border p-2">
-                        <input type="number" value={v.stock}
-                          onChange={(e) => {
-                            const next = [...variants];
-                            next[idx] = {...next[idx], stock: e.target.value};
-                            setVariants(next);
-                          }}
-                          className="border px-2 py-1 rounded w-full" />
-                      </td>
-                      <td className="border p-2">
-                        {variants.length > 1 && (
-                          <button type="button" onClick={() => removeRow(idx)}
-                            className="bg-red-600 text-white px-2 py-1 rounded text-sm cursor-pointer">Quitar</button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex gap-2">
-              <button type="button" onClick={handleSubmit} disabled={submitting}
-                className="bg-indigo-600 text-white px-4 py-1 rounded cursor-pointer disabled:opacity-50">
-                {submitting ? "Creando..." : `Crear ${variants.length} Variantes`}
-              </button>
-              <button type="button" onClick={onClose}
-                className="bg-gray-400 text-white px-4 py-1 rounded cursor-pointer">Cancelar</button>
-            </div>
-
-            {/* Category selector sub-modal */}
-            {showCategorySelector && (
-              <CategoriaSelector
-                allCategorias={allCategorias}
-                selectedIds={selectedCategoryIds}
-                onSelect={(ids) => setSelectedCategoryIds(ids)}
-                onClose={() => setShowCategorySelector(false)}
-              />
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
 /* ── Pagina principal ── */
 
 /**
@@ -931,7 +704,6 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
   const [catPopup, setCatPopup] = useState<{ id: number; nombre: string } | null>(null);
   const [allCats, setAllCats] = useState<Categoria[]>([]);
   const [allIngs, setAllIngs] = useState<Ingrediente[]>([]);
-  const [showVariantesModal, setShowVariantesModal] = useState(false);
   const [recentlyAdded, setRecentlyAdded] = useState<Set<number>>(new Set());
   const addTimerRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const [mensaje, setMensaje] = useState<{tipo: 'exito' | 'error'; texto: string} | null>(null);
@@ -1077,16 +849,19 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
               disponible: value.disponible,
             });
           } else {
-            await productosApi.update(state.editingId, {
-              nombre: value.nombre,
-              descripcion: value.descripcion,
-              receta: value.receta,
-              precio_base: value.precio_base,
-              precio_actual: value.precio_actual,
-              stock_cantidad: value.stock_cantidad,
-              disponible: value.disponible,
-              es_insumo: value.es_insumo,
-            });
+            // Build a payload with only the fields that actually changed,
+            // so unchanged fields are NOT sent to the backend.
+            const original = state.items.find(p => p.id === state.editingId);
+            const changed: Record<string, unknown> = {};
+            if (value.nombre !== original?.nombre) changed.nombre = value.nombre;
+            if (value.descripcion !== (original?.descripcion ?? null)) changed.descripcion = value.descripcion;
+            if (value.receta !== (original?.receta ?? null)) changed.receta = value.receta;
+            if (Number(value.precio_base) !== Number(original?.precio_base ?? 0)) changed.precio_base = value.precio_base;
+            if (Number(value.precio_actual) !== Number(original?.precio_actual ?? 0)) changed.precio_actual = value.precio_actual;
+            if (Number(value.stock_cantidad) !== Number(original?.stock_cantidad ?? 0)) changed.stock_cantidad = value.stock_cantidad;
+            if (value.disponible !== original?.disponible) changed.disponible = value.disponible;
+            if (value.es_insumo !== original?.es_insumo) changed.es_insumo = value.es_insumo;
+            await productosApi.update(state.editingId, changed);
           }
           mostrarMensaje('exito', 'Producto actualizado correctamente');
         } else {
@@ -1218,17 +993,13 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
           {mensaje.texto}
         </div>
       )}
-      {state.error && <p className="text-red-500 mb-4">{state.error}</p>}
+      {state.error && <pre className="text-red-500 mb-4 whitespace-pre-wrap font-sans">{state.error}</pre>}
 
       {/* Toolbar: create buttons, filter, export */}
       <div className="flex gap-2 mb-4 items-center">
         {!hideCreate && (
           <button onClick={handleStartCreate}
             className="bg-green-600 text-white px-4 py-1 rounded cursor-pointer">Crear Producto</button>
-        )}
-        {!hideCreate && (
-          <button onClick={() => setShowVariantesModal(true)}
-            className="bg-indigo-600 text-white px-4 py-1 rounded cursor-pointer">Crear Variantes</button>
         )}
         <input type="text" placeholder="Filtrar por nombre..." value={state.filter}
           onChange={(e) => dispatch({ type: "SET_FILTER", payload: e.target.value })}
@@ -1628,14 +1399,6 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
       {/* Popups for ingredient and category management */}
       {ingPopup && <IngredientesPopup productoId={ingPopup.id} productoNombre={ingPopup.nombre} onClose={() => setIngPopup(null)} />}
       {catPopup && <CategoriasPopup productoId={catPopup.id} productoNombre={catPopup.nombre} onClose={() => setCatPopup(null)} />}
-      {showVariantesModal && (
-        <CrearVariantesModal
-          allCategorias={allCats}
-          onClose={() => setShowVariantesModal(false)}
-          onComplete={() => { fetchData(); }}
-        />
-      )}
-
       {/* Category selector for creation form */}
       {state.showCategoriaSelector && (
         <CategoriaSelector

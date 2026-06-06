@@ -34,6 +34,7 @@ class DireccionEntregaUpdate(BaseModel):
     codigo_postal: Optional[str] = None
     latitud: Optional[Decimal] = None
     longitud: Optional[Decimal] = None
+    es_principal: Optional[bool] = None
 
 
 class DireccionEntregaRead(BaseModel):

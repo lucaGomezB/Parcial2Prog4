@@ -99,7 +99,6 @@ class CategoriaService:
                 setattr(db_categoria, key, value)
 
             uow.categorias.add(db_categoria)
-            uow.categorias.refresh(db_categoria)
             return db_categoria
 
     @staticmethod

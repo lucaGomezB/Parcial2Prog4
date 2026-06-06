@@ -247,15 +247,30 @@ class ProductoService:
                 )
                 associations = session.exec(stmt).all()
 
+                # First pass: validate ALL ingredients, collect every shortage
+                shortages: list[str] = []
                 for pi in associations:
                     ing = session.get(Ingrediente, pi.ingrediente_id)
                     if ing:
                         needed = pi.cantidad * diff
                         if ing.stock_actual < needed:
-                            raise HTTPException(
-                                status_code=400,
-                                detail=f"Stock insuficiente de '{ing.nombre}': necesita {needed} unidades, tiene {ing.stock_actual}"
+                            shortages.append(
+                                f"'{ing.nombre}': necesita {needed}, tiene {ing.stock_actual}"
                             )
+
+                # If ANY ingredient is short, report ALL at once — do NOT deduct anything
+                if shortages:
+                    lines = "\n".join(f"  - {s}" for s in shortages)
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Stock insuficiente en los siguientes ingredientes:\n{lines}"
+                    )
+
+                # Second pass: all validated — deduct now
+                for pi in associations:
+                    ing = session.get(Ingrediente, pi.ingrediente_id)
+                    if ing:
+                        needed = pi.cantidad * diff
                         ing.stock_actual -= needed
                         session.add(ing)
 
@@ -287,7 +302,6 @@ class ProductoService:
                 ProductoService._recalcular_precio_producto(session, producto_id)
 
             uow.productos.add(db_producto)
-            uow.productos.refresh(db_producto)
             return db_producto
 
     @staticmethod

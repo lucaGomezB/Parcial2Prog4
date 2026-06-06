@@ -84,7 +84,8 @@ class IngredienteService:
                 )
             db_ingrediente.precio_actual = precio
             uow.ingredientes.add(db_ingrediente)
-            uow.ingredientes.refresh(db_ingrediente)
+        # Refresh after commit to get current state
+        session.refresh(db_ingrediente)
         # Trigger price recalculation for all products using this ingredient
         ProductoService.recalcular_precio_productos_afectados(session, ingrediente_id)
         return db_ingrediente
@@ -101,7 +102,8 @@ class IngredienteService:
                 )
             db_ingrediente.stock_actual = stock
             uow.ingredientes.add(db_ingrediente)
-            uow.ingredientes.refresh(db_ingrediente)
+        # Refresh after commit to get current state
+        session.refresh(db_ingrediente)
         return db_ingrediente
 
     @staticmethod
@@ -117,10 +119,11 @@ class IngredienteService:
                 setattr(db_ingrediente, key, value)
 
             uow.ingredientes.add(db_ingrediente)
-            uow.ingredientes.refresh(db_ingrediente)
         # Propagate price change to all products if precio_actual was updated
         if 'precio_actual' in data.model_dump(exclude_unset=True):
             ProductoService.recalcular_precio_productos_afectados(session, ingrediente_id)
+        # Refresh after commit to load auto-generated timestamps without discarding changes
+        session.refresh(db_ingrediente)
         return db_ingrediente
 
     @staticmethod

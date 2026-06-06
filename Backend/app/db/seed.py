@@ -38,6 +38,7 @@ from modules.CatalogoDeProductos.Producto.service import ProductoService
 # ── Sales ──
 from modules.VentasPagosTrazabilidad.EstadoPedido.models import EstadoPedido
 from modules.VentasPagosTrazabilidad.FormaPago.models import FormaPago
+from modules.VentasPagosTrazabilidad.Pedido.models import Pedido
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -65,12 +66,14 @@ USERS_SEED = [
     {"nombre": "Cliente", "apellido": "Estandar", "email": "client@email.com",  "password": "client123",  "rol_codigo": "CLIENT"},
 ]
 
-# Default delivery addresses for each seed user
+# Default delivery addresses for each seed user.
+# Only admin has es_principal=True; the rest start as non-principal.
+# Users can set their own principal address later via the UI.
 DIRECCIONES_SEED = [
     {"email": "admin@email.com",   "alias": "Principal", "linea1": "Av. Siempre Viva 123",  "linea2": None, "ciudad": "Mendoza",   "provincia": "Mendoza", "codigo_postal": "5500", "es_principal": True},
-    {"email": "stock@email.com",   "alias": "Principal", "linea1": "Calle falsa 456",        "linea2": None, "ciudad": "Mendoza",   "provincia": "Mendoza", "codigo_postal": "5500", "es_principal": True},
-    {"email": "pedidos@email.com", "alias": "Principal", "linea1": "Av. del Libertador 789", "linea2": None, "ciudad": "Godoy Cruz", "provincia": "Mendoza", "codigo_postal": "5501", "es_principal": True},
-    {"email": "client@email.com",  "alias": "Principal", "linea1": "Av. Festa 1233",         "linea2": None, "ciudad": "Mendoza",   "provincia": "Mendoza", "codigo_postal": "5500", "es_principal": True},
+    {"email": "stock@email.com",   "alias": "Principal", "linea1": "Calle falsa 456",        "linea2": None, "ciudad": "Mendoza",   "provincia": "Mendoza", "codigo_postal": "5500", "es_principal": False},
+    {"email": "pedidos@email.com", "alias": "Principal", "linea1": "Av. del Libertador 789", "linea2": None, "ciudad": "Godoy Cruz", "provincia": "Mendoza", "codigo_postal": "5501", "es_principal": False},
+    {"email": "client@email.com",  "alias": "Principal", "linea1": "Av. Festa 1233",         "linea2": None, "ciudad": "Mendoza",   "provincia": "Mendoza", "codigo_postal": "5500", "es_principal": False},
 ]
 
 # Hierarchical product categories with display ordering.

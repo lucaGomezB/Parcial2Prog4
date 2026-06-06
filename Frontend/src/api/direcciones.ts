@@ -46,6 +46,7 @@ export interface DireccionEntregaUpdate {
   codigo_postal?: string | null;
   latitud?: string | null;
   longitud?: string | null;
+  es_principal?: boolean;
 }
 
 /**

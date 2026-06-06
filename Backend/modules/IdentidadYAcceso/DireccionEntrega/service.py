@@ -96,9 +96,9 @@ class DireccionEntregaService:
         """
         Partially update a delivery address.
 
-        Does NOT allow changing es_principal through this method
-        (use set_principal endpoint instead). Regular users are
-        scoped to their own addresses.
+        Supports changing es_principal: setting True auto-unsets any existing
+        principal for the user; setting False removes principal from this address.
+        Regular users are scoped to their own addresses.
         """
         with IdentidadYAccesoUnitOfWork(session) as uow:
             direccion = uow.direcciones.get_by_id(direccion_id)
@@ -108,11 +108,25 @@ class DireccionEntregaService:
                 return None
 
             values = data.model_dump(exclude_unset=True)
+
+            # Handle es_principal changes atomically
+            if 'es_principal' in values:
+                if values['es_principal']:
+                    # Setting as principal: unset any existing principal first
+                    existing_principal = uow.direcciones.get_principal(usuario_id)
+                    if existing_principal and existing_principal.id != direccion_id:
+                        existing_principal.es_principal = False
+                        uow.direcciones.add(existing_principal)
+                    direccion.es_principal = True
+                else:
+                    # Unsetting principal on this address
+                    direccion.es_principal = False
+                del values['es_principal']
+
             for key, value in values.items():
                 setattr(direccion, key, value)
 
             uow.direcciones.add(direccion)
-            uow.direcciones.refresh(direccion)
             return direccion
 
     @staticmethod
@@ -145,7 +159,6 @@ class DireccionEntregaService:
             # Set the new principal
             direccion.es_principal = True
             uow.direcciones.add(direccion)
-            uow.direcciones.refresh(direccion)
             return direccion
 
     @staticmethod

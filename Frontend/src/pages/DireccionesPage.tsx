@@ -296,13 +296,10 @@ export default function DireccionesPage() {
     load();
   };
 
-  /** Updates an existing address and optionally marks it as principal. */
+  /** Updates an existing address. Sends es_principal directly so the backend
+   *  handles unsetting the previous principal atomically. */
   const handleUpdate = async (id: number, data: DireccionEntregaUpdate & { es_principal?: boolean }) => {
-    const { es_principal, ...updateData } = data;
-    await direccionesApi.update(id, updateData);
-    if (es_principal) {
-      await direccionesApi.setPrincipal(id);
-    }
+    await direccionesApi.update(id, data);
     mostrarMensaje("Direccion actualizada");
     load();
   };

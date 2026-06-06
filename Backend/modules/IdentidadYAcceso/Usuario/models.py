@@ -19,7 +19,7 @@ from ..DireccionEntrega.models import DireccionEntrega
 
 if TYPE_CHECKING:
     from ..Rol.models import Rol
-    from modules.VentasPagosTrazabilidad.Pedido.models import Pedido  # noqa: F401 (late import below for runtime)
+    from modules.VentasPagosTrazabilidad.Pedido.models import Pedido  # noqa: F401
 
 
 class UsuarioBase(TimestampModel):
@@ -73,8 +73,8 @@ class Usuario(UsuarioBase, SoftDeleteModel, table=True):
     # 1:M relationship with Pedido
     pedidos: List["Pedido"] = Relationship(back_populates="usuario")
 
-
-# Late imports: needed at runtime for SQLAlchemy to resolve string references
-# in Relationship() definitions above. Imported here (after the class definition)
-# to break circular import chains during module load.
-from modules.VentasPagosTrazabilidad.Pedido.models import Pedido  # noqa: E402, F401
+# Pedido is NOT imported at runtime to avoid circular imports.
+# The Relationship reference uses a string "Pedido" which SQLAlchemy resolves
+# lazily during mapper configuration (not at import time). Both Usuario and
+# Pedido are imported in main.py before mapper configuration runs, so the
+# string reference resolves correctly when needed.
