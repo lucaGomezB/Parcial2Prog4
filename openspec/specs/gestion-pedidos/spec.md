@@ -63,3 +63,13 @@ Cada cambio de estado SHALL registrar una entrada en HistorialEstadoPedido con `
 #### Scenario: Append-only enforcement
 - **WHEN** se intenta UPDATE o DELETE en HistorialEstadoPedido
 - **THEN** el sistema rechaza la operación
+
+### Requirement: HistorialEstadoPedido queries use repository
+
+All `session.exec()` calls in HistorialEstadoPedido/service.py SHALL be replaced by `HistorialEstadoPedidoRepository(session).get_all_paginated()`.
+
+#### Scenario: get_all uses repository
+
+- **WHEN** `HistorialEstadoPedidoService.get_all(session, skip, limit, pedido_id)` is called
+- **THEN** it SHALL call `HistorialEstadoPedidoRepository(session).get_all_paginated(skip, limit, pedido_id)`
+- **THEN** it SHALL NOT use direct `session.exec()` or similar

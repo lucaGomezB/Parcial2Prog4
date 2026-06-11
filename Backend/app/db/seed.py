@@ -557,6 +557,16 @@ def run_seed():
         seed_estados_pedido(session)
         seed_formas_pago(session)
 
+    # Stamp Alembic to the current head so subsequent app starts
+    # don't try to re-run broken incremental migrations on an empty DB.
+    try:
+        from alembic.config import Config
+        from alembic import command
+        alembic_cfg = Config("alembic.ini")
+        command.stamp(alembic_cfg, "head")
+    except Exception:
+        pass  # Non-fatal: seed data is already in place
+
 
 # Allow running as a standalone script: `python -m app.db.seed`
 if __name__ == "__main__":

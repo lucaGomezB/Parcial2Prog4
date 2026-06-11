@@ -27,3 +27,41 @@ El sistema SHALL mantener un catálogo `FormaPago` con PK semántica `codigo` (V
 - **WHEN** `habilitado = false` para una forma de pago
 - **THEN** el endpoint GET /formas-pago no la incluye en la respuesta
 - **THEN** el endpoint GET /formas-pago?incluir_deshabilitadas=true la incluye
+
+### Requirement: Pedido queries MUST go through PedidoRepository
+
+All direct `session.exec()`, `session.get()`, `select()` calls in Pedido/service.py SHALL be replaced by equivalent PedidoRepository methods.
+
+#### Scenario: PedidoService uses repository for all reads
+
+- **WHEN** PedidoService calls any read operation (get_all, get_by_id, get_by_usuario, etc.)
+- **THEN** it SHALL use `PedidoRepository(session).<method>()` directly
+- **THEN** it SHALL NOT use `uow.session.exec()` or similar direct session calls
+
+#### Scenario: PedidoService uses UoW for all writes
+
+- **WHEN** PedidoService calls any write operation (create, update state, cancel)
+- **THEN** it SHALL use `with CatalogoDeProductosUnitOfWork(session) as uow:`
+- **THEN** it SHALL NOT call `uow.commit()` or `uow.rollback()` manually
+
+### Requirement: HTTP methods for Pedido endpoints follow REST conventions
+
+The three Pedido endpoints using POST for non-creational operations SHALL use semantically correct HTTP methods.
+
+#### Scenario: validar-stock uses GET
+
+- **WHEN** a client calls `GET /pedidos/validar-stock?productos=[...]`
+- **THEN** the endpoint returns stock validation results
+- **THEN** `POST /pedidos/validar-stock` SHALL NOT exist
+
+#### Scenario: avanzar uses PATCH
+
+- **WHEN** a client calls `PATCH /pedidos/{pedido_id}/avanzar`
+- **THEN** the endpoint advances the order state
+- **THEN** `POST /pedidos/{pedido_id}/avanzar` SHALL NOT exist
+
+#### Scenario: cancelar uses PATCH
+
+- **WHEN** a client calls `PATCH /pedidos/{pedido_id}/cancelar`
+- **THEN** the endpoint cancels the order
+- **THEN** `POST /pedidos/{pedido_id}/cancelar` SHALL NOT exist

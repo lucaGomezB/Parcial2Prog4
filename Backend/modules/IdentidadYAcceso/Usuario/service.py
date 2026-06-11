@@ -14,12 +14,12 @@ transactional consistency across related entities.
 
 from typing import List, Optional
 from fastapi import HTTPException, status
-from sqlmodel import Session, select
-from sqlalchemy.orm import selectinload
+from sqlmodel import Session
 
 from core.security import get_password_hash
 
 from .models import Usuario
+from .repository import UsuarioRepository
 from .schemas import UsuarioCreate, UsuarioUpdateWithRoles
 from ..Rol.models import Rol
 from ..uow import IdentidadYAccesoUnitOfWork
@@ -65,13 +65,10 @@ def _load_roles(session: Session, usuario: Usuario):
 
     Required because after session.commit(), lazy-loaded relationships
     may fail with "lazy loading outside of session". Re-querying with
-    selectinload ensures roles are available for serialization.
+    get_with_roles ensures roles are available for serialization.
     """
-    session.exec(
-        select(Usuario)
-        .where(Usuario.id == usuario.id)
-        .options(selectinload(Usuario.roles))
-    ).first()
+    repo = UsuarioRepository(session)
+    repo.get_with_roles(usuario.id)
     return usuario
 
 
@@ -100,13 +97,8 @@ def obtener_usuario(session: Session, usuario_id: int) -> Optional[Usuario]:
     Returns None if the user is not found or has been soft-deleted
     (the repository base already filters deleted_at IS NULL).
     """
-    with IdentidadYAccesoUnitOfWork(session) as uow:
-        stmt = (
-            select(Usuario)
-            .where(Usuario.id == usuario_id)
-            .options(selectinload(Usuario.roles))
-        )
-        return uow.session.exec(stmt).first()
+    repo = UsuarioRepository(session)
+    return repo.get_with_roles(usuario_id)
 
 
 def actualizar_usuario(

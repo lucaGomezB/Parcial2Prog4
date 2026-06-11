@@ -37,6 +37,7 @@ import {
   type DireccionEntrega,
   type DireccionEntregaInput,
 } from "../api/direcciones";
+import { pagosApi } from "../api/pagos";
 import { getAccessToken } from "../api/client";
 import { useAppForm, required } from "../hooks/useAppForm";
 
@@ -321,6 +322,8 @@ export default function Carrito() {
   const [loadingDirs, setLoadingDirs] = useState(false);
   const [stockWarnings, setStockWarnings] = useState<ValidarStockDetalle[] | null>(null);
   const [mensaje, setMensaje] = useState<{ tipo: 'exito' | 'error'; texto: string } | null>(null);
+  const [formaPago, setFormaPago] = useState<string>("EFECTIVO");
+  const [mpCheckoutUrl, setMpCheckoutUrl] = useState<string | null>(null);
 
   // Sync local state with localStorage on mount
   useEffect(() => {
@@ -417,8 +420,8 @@ export default function Carrito() {
 
       // Step 2: Create the order
       const direccionId = typeof direccionSelId === "number" ? direccionSelId : undefined;
-      await pedidosApi.create({
-        forma_pago_codigo: "EFECTIVO",
+      const pedido = await pedidosApi.create({
+        forma_pago_codigo: formaPago,
         subtotal: getTotal(),
         descuento: 0,
         costo_envio: direccionId ? 50 : 0,
@@ -433,8 +436,21 @@ export default function Carrito() {
 
       clearCarrito();
       setItems([]);
-      setMensaje({ tipo: 'exito', texto: 'Pedido creado correctamente' });
-      setTimeout(() => navigate("/pedidos"), 1500);
+
+      // Step 3: If MERCADOPAGO, initiate payment and show checkout URL
+      if (formaPago === "MERCADOPAGO") {
+        try {
+          const paymentResult = await pagosApi.initPayment(pedido.id);
+          setMpCheckoutUrl(paymentResult.init_point);
+          setMensaje({ tipo: 'exito', texto: 'Pedido creado. Haga clic en el boton de pago para continuar.' });
+        } catch {
+          setMensaje({ tipo: 'exito', texto: 'Pedido creado correctamente. Complete el pago desde la seccion de pedidos.' });
+          setTimeout(() => navigate("/pedidos"), 2000);
+        }
+      } else {
+        setMensaje({ tipo: 'exito', texto: 'Pedido creado correctamente' });
+        setTimeout(() => navigate("/pedidos"), 1500);
+      }
     } catch (e) {
       // Step 3: Handle 409 from auto-advance (stock race condition)
       if (e instanceof AxiosError && e.response?.status === 409) {
@@ -650,6 +666,35 @@ export default function Carrito() {
         )}
       </div>
 
+      {/* Payment method selector */}
+      <div className="border-t pt-4 mb-4">
+        <h2 className="text-sm font-semibold text-gray-700 mb-2">Metodo de pago</h2>
+        <div className="flex gap-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="formaPago"
+              value="EFECTIVO"
+              checked={formaPago === "EFECTIVO"}
+              onChange={() => setFormaPago("EFECTIVO")}
+              className="cursor-pointer"
+            />
+            <span className="text-sm">Efectivo (contra entrega)</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="formaPago"
+              value="MERCADOPAGO"
+              checked={formaPago === "MERCADOPAGO"}
+              onChange={() => setFormaPago("MERCADOPAGO")}
+              className="cursor-pointer"
+            />
+            <span className="text-sm">MercadoPago (tarjeta/debito)</span>
+          </label>
+        </div>
+      </div>
+
       {/* Subtotal and checkout button */}
       <div className="border-t pt-4 flex justify-between items-center">
         <div className="text-xl font-bold">
@@ -684,6 +729,34 @@ export default function Carrito() {
           onClose={() => setShowNewDir(false)}
           onSave={handleCrearDireccion}
         />
+      )}
+
+      {/* MercadoPago checkout link modal */}
+      {mpCheckoutUrl && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded p-6 w-full max-w-md text-center">
+            <h2 className="text-lg font-bold mb-2">Pago con MercadoPago</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Su pedido fue creado. Para completar el pago, haga clic en el boton de abajo.
+            </p>
+            <a
+              href={mpCheckoutUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block bg-blue-600 text-white px-6 py-3 rounded font-semibold hover:bg-blue-700 mb-3"
+            >
+              Ir a MercadoPago
+            </a>
+            <div>
+              <button
+                onClick={() => { setMpCheckoutUrl(null); navigate("/pedidos"); }}
+                className="text-sm text-gray-500 underline cursor-pointer"
+              >
+                Ver mis pedidos
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

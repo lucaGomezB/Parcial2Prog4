@@ -19,12 +19,13 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
-from sqlmodel import Session, select
+from sqlmodel import Session
 from core.security import verify_password, create_access_token
 
 from modules.IdentidadYAcceso.Usuario.models import Usuario
 from modules.IdentidadYAcceso.RefreshToken.models import RefreshToken
 from ..uow import IdentidadYAccesoUnitOfWork
+from .repository import AuthRepository
 from models.base import get_utc_now
 
 
@@ -37,8 +38,8 @@ def authenticate_user(session: Session, email: str, password: str) -> Usuario | 
     email does not exist or the password is wrong, to prevent
     user enumeration attacks.
     """
-    stmt = select(Usuario).where(Usuario.email == email)
-    user = session.exec(stmt).first()
+    repo = AuthRepository(session)
+    user = repo.find_by_email(email)
 
     if not user:
         return None

@@ -8,13 +8,12 @@ Key rules:
 """
 from typing import List, Optional
 from fastapi import HTTPException, status
-from sqlmodel import Session, col, select
+from sqlmodel import Session
 from .models import Categoria
+from .repository import CategoriaRepository
 from .schemas import CategoriaCreate, CategoriaUpdate
 from models.base import get_utc_now
 from ..uow import CatalogoDeProductosUnitOfWork
-from ..Producto.models import Producto
-from ..producto_categoria import ProductoCategoria
 
 
 class CategoriaService:
@@ -24,31 +23,28 @@ class CategoriaService:
     def get_all(session: Session, skip: int = 0, limit: int = 100, parent_id: int | None = None) -> List[Categoria]:
         """List categories with optional parent_id filter for subtree navigation.
 
-        Read-only: avoids UoW because __exit__ would call commit(), expiring ORM
-        objects before FastAPI serialization (see ProductoService.get_all docstring).
+        Read-only: uses repository directly (no UoW) to avoid commit/expire.
         """
-        stmt = select(Categoria).where(col(Categoria.deleted_at).is_(None)).offset(skip).limit(limit).order_by(Categoria.id.desc())
-        if parent_id is not None:
-            stmt = stmt.where(Categoria.parent_id == parent_id)
-        return session.exec(stmt).all()
+        repo = CategoriaRepository(session)
+        return repo.get_all(skip=skip, limit=limit, parent_id=parent_id)
 
     @staticmethod
     def get_by_id(session: Session, categoria_id: int) -> Optional[Categoria]:
         """Fetch a single non-deleted category.
 
-        Read-only: avoids UoW for same reason as get_all (commit would expire ORM).
+        Read-only: uses repository directly (no UoW).
         """
-        stmt = select(Categoria).where(Categoria.id == categoria_id).where(col(Categoria.deleted_at).is_(None))
-        return session.exec(stmt).first()
+        repo = CategoriaRepository(session)
+        return repo.get_by_id(categoria_id)
 
     @staticmethod
     def get_root_categories(session: Session) -> List[Categoria]:
         """Fetch all root categories (no parent) — used to build the category tree.
 
-        Read-only: avoids UoW for same reason as get_all (commit would expire ORM).
+        Read-only: uses repository directly (no UoW).
         """
-        stmt = select(Categoria).where(col(Categoria.deleted_at).is_(None), Categoria.parent_id.is_(None))
-        return session.exec(stmt).all()
+        repo = CategoriaRepository(session)
+        return repo.get_root_categories()
 
     @staticmethod
     def create(session: Session, data: CategoriaCreate) -> Categoria:
@@ -58,11 +54,10 @@ class CategoriaService:
         - Name uniqueness (no duplicate category names)
         - Parent category exists (FK integrity check)
         """
+        repo = CategoriaRepository(session)
+
         # Validate name uniqueness before attempting DB insert
-        existing = session.exec(
-            select(Categoria).where(Categoria.nombre == data.nombre, Categoria.deleted_at.is_(None))
-        ).first()
-        if existing:
+        if repo.exists_by_nombre(data.nombre):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Ya existe una categoría con el nombre '{data.nombre}'"
@@ -70,9 +65,7 @@ class CategoriaService:
 
         # Validate parent exists when specified
         if data.parent_id is not None:
-            parent = session.exec(
-                select(Categoria).where(Categoria.id == data.parent_id, Categoria.deleted_at.is_(None))
-            ).first()
+            parent = repo.get_parent(data.parent_id)
             if not parent:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -114,17 +107,7 @@ class CategoriaService:
                 return None
 
             # Check for active product associations before allowing deletion
-            stmt = (
-                select(ProductoCategoria)
-                .join(Producto, ProductoCategoria.producto_id == Producto.id)
-                .where(
-                    ProductoCategoria.categoria_id == categoria_id,
-                    col(Producto.deleted_at).is_(None)
-                )
-                .limit(1)
-            )
-            active_link = uow.session.exec(stmt).first()
-            if active_link:
+            if uow.categorias.has_active_products(categoria_id):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="No se puede eliminar la categoría: tiene productos activos asociados"

@@ -1,9 +1,9 @@
 """
-Refresh token repository module.
+Repository module for authentication.
 
-Provides database access for RefreshToken entities, extending the
-generic BaseRepository with domain-specific queries: finding valid
-tokens by hash, listing expired tokens for cleanup, and hard deletion.
+Provides:
+- AuthRepository: user lookup by email (authentication).
+- RefreshTokenRepository: refresh token lifecycle management.
 """
 
 from datetime import datetime
@@ -11,7 +11,25 @@ from datetime import datetime
 from sqlmodel import Session, select
 
 from models.base_repository import BaseRepository
+from modules.IdentidadYAcceso.Usuario.models import Usuario
 from modules.IdentidadYAcceso.RefreshToken.models import RefreshToken
+
+
+class AuthRepository(BaseRepository[Usuario]):
+    """
+    Repository for user authentication lookups.
+
+    Provides the find_by_email method used by authenticate_user
+    to locate a user by their email address.
+    """
+
+    def __init__(self, session: Session):
+        super().__init__(session, Usuario)
+
+    def find_by_email(self, email: str) -> Usuario | None:
+        """Find a user by email. Returns None if not found."""
+        statement = select(Usuario).where(Usuario.email == email)
+        return self.session.exec(statement).first()
 
 
 class RefreshTokenRepository(BaseRepository[RefreshToken]):

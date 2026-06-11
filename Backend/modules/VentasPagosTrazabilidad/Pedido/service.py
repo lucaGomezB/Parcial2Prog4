@@ -13,14 +13,16 @@ This is the most important file in the Sales module. It contains:
 PATTERN: Unit of Work (UoW)
     All write operations go through VentasPagosTrazabilidadUnitOfWork,
     which ensures atomicity: everything commits or everything rolls back.
+Read-only operations use the repository directly without UoW to avoid
+the commit/expire problem.
 """
-from sqlmodel import Session, select, col
-from sqlalchemy.orm import selectinload
+from sqlmodel import Session
 from typing import List, Optional
 from decimal import Decimal
 from fastapi import HTTPException, status
 import math
 from .models import Pedido
+from .repository import PedidoRepository
 from .schemas import PedidoCreate, PedidoUpdate, ValidarStockInput, ValidarStockResponse, ValidarStockDetalleResponse
 from ..uow import VentasPagosTrazabilidadUnitOfWork
 from ..DetallePedido.models import DetallePedido
@@ -90,90 +92,60 @@ class PedidoService:
         uow.pedidos.add(pedido)
 
     @staticmethod
-    def _eager(stmt):
-        """Add selectinload options to any query for eager-loading relationships.
-
-        SQLAlchemy loads relationships lazily by default — accessing
-        pedido.detalles would trigger an additional SQL query each time (N+1 problem).
-        selectinload loads everything in a single query with JOINs.
-        """
-        return stmt.options(
-            selectinload(Pedido.detalles),
-            selectinload(Pedido.estado),
-            selectinload(Pedido.usuario),
-        )
-
-    @staticmethod
     def get_all(session: Session, skip: int = 0, limit: int = 100) -> List[Pedido]:
-        """List ALL orders with pagination. Intended for ADMIN/PEDIDOS users."""
-        with VentasPagosTrazabilidadUnitOfWork(session) as uow:
-            stmt = PedidoService._eager(select(Pedido).offset(skip).limit(limit))
-            return uow.session.exec(stmt).all()
+        """List ALL orders with pagination. Intended for ADMIN/PEDIDOS users.
+
+        Read-only: uses repository directly (no UoW) to avoid commit/expire.
+        """
+        repo = PedidoRepository(session)
+        return repo.get_all_eager(skip=skip, limit=limit)
 
     @staticmethod
     def get_by_id(session: Session, pedido_id: int) -> Optional[Pedido]:
-        """Fetch a single order by its primary key with eager-loaded details."""
-        with VentasPagosTrazabilidadUnitOfWork(session) as uow:
-            stmt = PedidoService._eager(select(Pedido).where(Pedido.id == pedido_id))
-            return uow.session.exec(stmt).first()
+        """Fetch a single order by its primary key with eager-loaded details.
+
+        Read-only: uses repository directly (no UoW).
+        """
+        repo = PedidoRepository(session)
+        return repo.get_by_id_eager(pedido_id)
 
     @staticmethod
     def get_by_usuario_id(session: Session, usuario_id: int, skip: int = 0, limit: int = 100) -> List[Pedido]:
-        """Fetch non-deleted orders for a specific user, newest first."""
-        with VentasPagosTrazabilidadUnitOfWork(session) as uow:
-            stmt = PedidoService._eager(
-                select(Pedido)
-                .where(Pedido.usuario_id == usuario_id, col(Pedido.deleted_at).is_(None))
-                .offset(skip).limit(limit)
-                .order_by(Pedido.created_at.desc())
-            )
-            return uow.session.exec(stmt).all()
+        """Fetch non-deleted orders for a specific user, newest first.
+
+        Read-only: uses repository directly (no UoW).
+        """
+        repo = PedidoRepository(session)
+        return repo.get_by_usuario_id_eager(usuario_id, skip=skip, limit=limit)
 
     @staticmethod
     def get_activos(session: Session, skip: int = 0, limit: int = 100) -> List[Pedido]:
         """Fetch non-terminal orders (not ENTREGADO or CANCELADO), newest first.
 
         Used for the "active orders" dashboard.
+        Read-only: uses repository directly (no UoW).
         """
-        with VentasPagosTrazabilidadUnitOfWork(session) as uow:
-            stmt = PedidoService._eager(
-                select(Pedido)
-                .where(col(Pedido.estado_codigo).not_in(ESTADOS_TERMINALES))
-                .where(col(Pedido.deleted_at).is_(None))
-                .offset(skip).limit(limit)
-                .order_by(Pedido.created_at.desc())
-            )
-            return uow.session.exec(stmt).all()
+        repo = PedidoRepository(session)
+        return repo.get_activos(skip=skip, limit=limit)
 
     @staticmethod
     def get_historial(session: Session, skip: int = 0, limit: int = 100) -> List[Pedido]:
         """Fetch terminal-state orders (ENTREGADO or CANCELADO), most recently updated first.
 
         Used for the order history view.
+        Read-only: uses repository directly (no UoW).
         """
-        with VentasPagosTrazabilidadUnitOfWork(session) as uow:
-            stmt = PedidoService._eager(
-                select(Pedido)
-                .where(col(Pedido.estado_codigo).in_(ESTADOS_TERMINALES))
-                .where(col(Pedido.deleted_at).is_(None))
-                .offset(skip).limit(limit)
-                .order_by(Pedido.updated_at.desc())
-            )
-            return uow.session.exec(stmt).all()
+        repo = PedidoRepository(session)
+        return repo.get_historial(skip=skip, limit=limit)
 
     @staticmethod
     def get_historial_by_usuario(session: Session, usuario_id: int, skip: int = 0, limit: int = 100) -> List[Pedido]:
-        """Fetch terminal-state orders for a specific user, most recently updated first."""
-        with VentasPagosTrazabilidadUnitOfWork(session) as uow:
-            stmt = PedidoService._eager(
-                select(Pedido)
-                .where(Pedido.usuario_id == usuario_id)
-                .where(col(Pedido.estado_codigo).in_(ESTADOS_TERMINALES))
-                .where(col(Pedido.deleted_at).is_(None))
-                .offset(skip).limit(limit)
-                .order_by(Pedido.updated_at.desc())
-            )
-            return uow.session.exec(stmt).all()
+        """Fetch terminal-state orders for a specific user, most recently updated first.
+
+        Read-only: uses repository directly (no UoW).
+        """
+        repo = PedidoRepository(session)
+        return repo.get_historial_by_usuario(usuario_id, skip=skip, limit=limit)
 
     @staticmethod
     def create(session: Session, data: PedidoCreate) -> Pedido:
@@ -253,13 +225,11 @@ class PedidoService:
         errors in real-time. The REAL stock validation (with deduction)
         happens in avanzar_estado when the order transitions to CONFIRMADO.
         """
-        from modules.CatalogoDeProductos.Producto.models import Producto
-
+        repo = PedidoRepository(session)
         errores: list[ValidarStockDetalleResponse] = []
 
         for det in data.detalles:
-            # Validate against Producto.stock_cantidad
-            prod = session.get(Producto, det.producto_id)
+            prod = repo.get_producto(det.producto_id)
             if not prod:
                 raise HTTPException(status_code=404, detail=f"Producto {det.producto_id} no encontrado")
             stock_disp = prod.stock_cantidad
@@ -287,20 +257,16 @@ class PedidoService:
         After modification, subtotal and total are recalculated from the
         remaining details' subtotal_snap values.
         """
-        from ..DetallePedido.models import DetallePedido
+        repo = PedidoRepository(session)
 
-        db_pedido = PedidoService.get_by_id(session, pedido_id)
+        db_pedido = repo.get_by_id_eager(pedido_id)
         if not db_pedido:
             raise HTTPException(status_code=404, detail="Pedido no encontrado")
         if db_pedido.estado_codigo != "PENDIENTE":
             raise HTTPException(status_code=400, detail="Solo se pueden modificar detalles en pedidos PENDIENTE")
 
         with VentasPagosTrazabilidadUnitOfWork(session) as uow:
-            stmt = select(DetallePedido).where(
-                DetallePedido.pedido_id == pedido_id,
-                DetallePedido.producto_id == producto_id,
-            )
-            detalle = session.exec(stmt).first()
+            detalle = repo.get_detalle_by_producto(pedido_id, producto_id)
             if not detalle:
                 raise HTTPException(status_code=404, detail="Detalle no encontrado en el pedido")
 
@@ -312,9 +278,7 @@ class PedidoService:
                 uow.add(detalle)
 
             # Recalculate order totals from remaining details
-            detalles_restantes = session.exec(
-                select(DetallePedido).where(DetallePedido.pedido_id == pedido_id)
-            ).all()
+            detalles_restantes = repo.get_detalles(pedido_id)
             nuevo_subtotal = sum(d.subtotal_snap for d in detalles_restantes)
             db_pedido = uow.pedidos.get_by_id(pedido_id)
             db_pedido.subtotal = nuevo_subtotal
@@ -366,11 +330,9 @@ class PedidoService:
 
             # Stock validation and deduction only occurs at CONFIRMADO
             if estado_siguiente == "CONFIRMADO":
-                from modules.CatalogoDeProductos.Producto.models import Producto
-
                 errores_stock: list[dict] = []
                 for det in db_pedido.detalles:
-                    prod = session.get(Producto, det.producto_id)
+                    prod = uow.pedidos.get_producto(det.producto_id)
                     stock_disp = prod.stock_cantidad if prod else 0
                     if stock_disp < det.cantidad:
                         errores_stock.append({
@@ -391,17 +353,11 @@ class PedidoService:
                     )
 
                 # Validate ingredient stock levels
-                from modules.CatalogoDeProductos.producto_ingrediente import ProductoIngrediente
-                from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
-
                 errores_ing_stock: list[dict] = []
                 for det in db_pedido.detalles:
-                    stmt_pi = select(ProductoIngrediente).where(
-                        ProductoIngrediente.producto_id == det.producto_id
-                    )
-                    for pi in session.exec(stmt_pi):
+                    for pi in uow.pedidos.get_producto_ingredientes(det.producto_id):
                         cantidad_needed = pi.cantidad * det.cantidad
-                        ing = session.get(Ingrediente, pi.ingrediente_id)
+                        ing = uow.pedidos.get_ingrediente(pi.ingrediente_id)
                         if ing and ing.stock_actual < cantidad_needed:
                             errores_ing_stock.append({
                                 "ingrediente": ing.nombre,
@@ -420,25 +376,27 @@ class PedidoService:
 
                 # Deduct product stock at confirmation
                 for det in db_pedido.detalles:
-                    prod = session.get(Producto, det.producto_id)
+                    prod = uow.pedidos.get_producto(det.producto_id)
                     if prod:
                         prod.stock_cantidad = max(0, prod.stock_cantidad - det.cantidad)
-                        session.add(prod)
+                        uow.add(prod)
 
                 # Deduct ingredient stock at confirmation
-                from modules.CatalogoDeProductos.producto_ingrediente import ProductoIngrediente
-                from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
-
                 for det in db_pedido.detalles:
-                    stmt_pi = select(ProductoIngrediente).where(
-                        ProductoIngrediente.producto_id == det.producto_id
-                    )
-                    for pi in session.exec(stmt_pi):
+                    for pi in uow.pedidos.get_producto_ingredientes(det.producto_id):
                         cantidad_a_descontar = int(math.ceil(pi.cantidad * det.cantidad))
-                        ing = session.get(Ingrediente, pi.ingrediente_id)
+                        ing = uow.pedidos.get_ingrediente(pi.ingrediente_id)
                         if ing:
                             ing.stock_actual = max(0, ing.stock_actual - cantidad_a_descontar)
-                            session.add(ing)
+                            uow.add(ing)
+
+                # Create MercadoPago payment record if this is an MP order
+                if db_pedido.forma_pago_codigo == "MERCADOPAGO":
+                    # Lazy import to avoid circular dependency:
+                    # PagoService -> PedidoService -> PagoService
+                    from ..Pago.service import PagoService as _PagoService
+
+                    _PagoService.init_mp_payment(session, pedido_id, uow=uow)
 
             # Atomic transition: audit trail + state update
             usuario_id = usuario.id if hasattr(usuario, 'id') else None
@@ -531,8 +489,7 @@ class PedidoService:
                     )
 
                 # Remove all existing details
-                stmt = select(DetallePedido).where(DetallePedido.pedido_id == pedido_id)
-                for det in session.exec(stmt).all():
+                for det in uow.pedidos.get_detalles(pedido_id):
                     uow.delete(det)
 
                 # Add new details from the request

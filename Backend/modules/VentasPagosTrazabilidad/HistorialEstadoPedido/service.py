@@ -2,10 +2,10 @@
 HistorialEstadoPedido service — read-only access to order state history.
 
 Read operations do NOT use UoW to avoid the commit/expire problem.
-Queries use the repository or direct session queries (see CategoriaService pattern).
+All queries delegate to the repository.
 """
 from typing import List, Optional
-from sqlmodel import Session, select
+from sqlmodel import Session
 from .models import HistorialEstadoPedido
 from .repository import HistorialEstadoPedidoRepository
 
@@ -45,7 +45,7 @@ class HistorialEstadoPedidoService:
 
         If pedido_id is provided, filters to entries for that specific order.
         Ordered by created_at DESC to show most recent transitions first.
-        Uses direct session query (no UoW) consistent with CategoriaService pattern.
+        Delegates to repository (read-only, no UoW).
 
         Args:
             session: Active SQLModel database session.
@@ -56,13 +56,5 @@ class HistorialEstadoPedidoService:
         Returns:
             List of HistorialEstadoPedido records matching the criteria.
         """
-        stmt = select(HistorialEstadoPedido)
-        if pedido_id is not None:
-            stmt = stmt.where(HistorialEstadoPedido.pedido_id == pedido_id)
-        stmt = (
-            stmt
-            .offset(skip)
-            .limit(limit)
-            .order_by(HistorialEstadoPedido.created_at.desc())
-        )
-        return session.exec(stmt).all()
+        repo = HistorialEstadoPedidoRepository(session)
+        return repo.get_all_paginated(skip=skip, limit=limit, pedido_id=pedido_id)

@@ -148,13 +148,13 @@ def create(
     return pedido
 
 
-@router.post("/validar-stock", response_model=ValidarStockResponse)
+@router.get("/validar-stock", response_model=ValidarStockResponse)
 def validar_stock(
     data: ValidarStockInput,
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """POST /pedidos/validar-stock — Pre-validate stock availability for cart items.
+    """GET /pedidos/validar-stock — Pre-validate stock availability for cart items.
 
     Read-only check — does NOT reserve or deduct stock.
     Used by the frontend cart to show real-time stock errors before order creation.
@@ -162,14 +162,14 @@ def validar_stock(
     return PedidoService.validar_stock_items(session, data)
 
 
-@router.post("/{pedido_id}/avanzar", response_model=PedidoAvanzarResponse,
-             dependencies=[Depends(require_roles(["ADMIN", "PEDIDOS"]))])
+@router.patch("/{pedido_id}/avanzar", response_model=PedidoAvanzarResponse,
+              dependencies=[Depends(require_roles(["ADMIN", "PEDIDOS"]))])
 def avanzar(
     pedido_id: int,
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """POST /pedidos/{id}/avanzar — Advance the order to the next FSM state.
+    """PATCH /pedidos/{id}/avanzar — Advance the order to the next FSM state.
 
     Transitions:
         PENDIENTE -> CONFIRMADO (deducts stock)
@@ -188,13 +188,13 @@ def avanzar(
     )
 
 
-@router.post("/{pedido_id}/cancelar", response_model=PedidoCancelarResponse)
+@router.patch("/{pedido_id}/cancelar", response_model=PedidoCancelarResponse)
 def cancelar(
     pedido_id: int,
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """POST /pedidos/{id}/cancelar — Cancel an order.
+    """PATCH /pedidos/{id}/cancelar — Cancel an order.
 
     Permission rules:
         ADMIN/PEDIDOS: can cancel ANY order at ANY state

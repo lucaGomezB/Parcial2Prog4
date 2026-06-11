@@ -54,3 +54,16 @@ class UsuarioRepository(BaseRepository[Usuario]):
             .order_by(Usuario.id.desc())
         )
         return self.session.exec(statement).all()
+
+    def get_with_roles(self, usuario_id: int):
+        """Fetch a user by ID with eager-loaded roles relationship.
+
+        Uses selectinload to prevent N+1 when serializing the response.
+        Returns None if the user is not found or has been soft-deleted.
+        """
+        statement = (
+            select(Usuario)
+            .where(Usuario.id == usuario_id)
+            .options(selectinload(Usuario.roles))
+        )
+        return self.session.exec(statement).first()

@@ -11,8 +11,9 @@ This is the thickest layer in the Product module. Key invariants:
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlmodel import Session, col, select
+from sqlmodel import Session
 from .models import Producto
+from .repository import ProductoRepository
 from .schemas import ProductoCreate, ProductoRead, ProductoUpdate, IngredienteAsignado, CategoriaAsignada
 from models.base import get_utc_now
 from ..Categoria.models import Categoria
@@ -95,7 +96,8 @@ class ProductoService:
         This method does NOT manage its own UoW — the calling method
         is responsible for the transaction boundary.
         """
-        db_producto = session.get(Producto, producto_id)
+        repo = ProductoRepository(session)
+        db_producto = repo.get_with_ingredients(producto_id)
         if not db_producto:
             return
 
@@ -104,17 +106,14 @@ class ProductoService:
             return
 
         # Fetch all ProductoIngrediente associations for this product
-        stmt = select(ProductoIngrediente).where(
-            ProductoIngrediente.producto_id == producto_id,
-        )
-        associations = session.exec(stmt).all()
+        associations = repo.get_producto_ingredientes(producto_id)
 
         if not associations:
             return
 
         total = Decimal('0')
         for pi in associations:
-            ing = session.get(Ingrediente, pi.ingrediente_id)
+            ing = repo.get_ingrediente(pi.ingrediente_id)
             if ing and ing.precio_actual:
                 total += ing.precio_actual * Decimal(pi.cantidad)
 
@@ -131,28 +130,22 @@ class ProductoService:
         """Recalculate precio_base for ALL products using a given ingredient.
 
         Called automatically when an ingredient's price changes.
-        Manages its own UoW transaction.
+        Manages its own UoW transaction. The UoW __exit__ handles commit.
         """
         with CatalogoDeProductosUnitOfWork(session) as uow:
-            stmt = select(ProductoIngrediente.producto_id).where(
-                ProductoIngrediente.ingrediente_id == ingrediente_id,
-            ).distinct()
-            producto_ids = session.exec(stmt).all()
+            repo = ProductoRepository(session)
+            producto_ids = repo.get_productos_afectados(ingrediente_id)
 
             # Exclude insumo products from recalculation (their price is manual).
             # Single batch query instead of N+1 individual session.get() calls.
             if producto_ids:
-                insumo_stmt = select(Producto.id).where(
-                    Producto.id.in_(producto_ids),
-                    Producto.es_insumo == True,
-                )
-                insumo_ids = set(session.exec(insumo_stmt).all())
+                insumo_ids = repo.get_insumo_ids(producto_ids)
                 producto_ids = [pid for pid in producto_ids if pid not in insumo_ids]
 
             for pid in producto_ids:
                 ProductoService._recalcular_precio_producto(session, pid)
 
-            uow.commit()
+            # NOTE: No manual uow.commit() — the UoW __exit__ handles it automatically.
 
     @staticmethod
     def get_all(session: Session, skip: int = 0, limit: int = 100):
@@ -164,35 +157,17 @@ class ProductoService:
         The tiene_ingredientes flag is computed in a batch query to
         avoid N+1 checks per product.
         """
-        from sqlmodel import select, col
-
-        stmt = (
-            select(Producto)
-            .where(col(Producto.deleted_at).is_(None))
-            .offset(skip).limit(limit)
-            .order_by(Producto.id.desc())
-        )
-        productos = session.exec(stmt).all()
+        repo = ProductoRepository(session)
+        productos, ids_with_ingredients = repo.get_all_with_ingredient_flag(skip=skip, limit=limit)
 
         if not productos:
             return productos
 
-        # Batch-check which products have ingredient associations
-        product_ids = [p.id for p in productos]
-        stmt = select(ProductoIngrediente.producto_id).where(
-            ProductoIngrediente.producto_id.in_(product_ids)
-        ).distinct()
-        rows = session.exec(stmt).all()
-        ids_with_ingredients = set(rows)
-
         # Build ProductoRead response with computed tiene_ingredientes
-        # Normalize NULL JSON fields before Pydantic validation
         result = []
         for p in productos:
             if p.imagenes_url is None:
                 p.imagenes_url = []
-            # model_validate does NOT include tiene_ingredientes (not a DB field),
-            # so we exclude it from the dump and pass it explicitly.
             base = ProductoRead.model_validate(p).model_dump(exclude={"tiene_ingredientes"})
             result.append(
                 ProductoRead(
@@ -204,15 +179,12 @@ class ProductoService:
 
     @staticmethod
     def get_by_id(session: Session, producto_id: int):
-        """Fetch a single non-deleted product by ID."""
-        from sqlmodel import select, col
+        """Fetch a single non-deleted product by ID.
 
-        stmt = (
-            select(Producto)
-            .where(Producto.id == producto_id)
-            .where(col(Producto.deleted_at).is_(None))
-        )
-        return session.exec(stmt).first()
+        Read-only: uses repository directly (no UoW).
+        """
+        repo = ProductoRepository(session)
+        return repo.get_with_ingredients(producto_id)
 
     @staticmethod
     def update(session: Session, producto_id: int, data: ProductoUpdate):
@@ -229,6 +201,7 @@ class ProductoService:
             if not db_producto:
                 return None
 
+            repo = ProductoRepository(session)
             values = data.model_dump(exclude_unset=True)
 
             # Track state before applying changes, for transition detection
@@ -242,15 +215,12 @@ class ProductoService:
             new_stock = db_producto.stock_cantidad
             if 'stock_cantidad' in values and new_stock > old_stock:
                 diff = new_stock - old_stock
-                stmt = select(ProductoIngrediente).where(
-                    ProductoIngrediente.producto_id == producto_id,
-                )
-                associations = session.exec(stmt).all()
+                associations = repo.get_producto_ingredientes(producto_id)
 
                 # First pass: validate ALL ingredients, collect every shortage
                 shortages: list[str] = []
                 for pi in associations:
-                    ing = session.get(Ingrediente, pi.ingrediente_id)
+                    ing = repo.get_ingrediente(pi.ingrediente_id)
                     if ing:
                         needed = pi.cantidad * diff
                         if ing.stock_actual < needed:
@@ -268,7 +238,7 @@ class ProductoService:
 
                 # Second pass: all validated — deduct now
                 for pi in associations:
-                    ing = session.get(Ingrediente, pi.ingrediente_id)
+                    ing = repo.get_ingrediente(pi.ingrediente_id)
                     if ing:
                         needed = pi.cantidad * diff
                         ing.stock_actual -= needed
@@ -368,16 +338,13 @@ class ProductoService:
         Returns the updated ingredient list on success, None if not found.
         """
         with CatalogoDeProductosUnitOfWork(session) as uow:
-            stmt = select(ProductoIngrediente).where(
-                ProductoIngrediente.producto_id == producto_id,
-                ProductoIngrediente.ingrediente_id == ingrediente_id,
-            )
-            pi = session.exec(stmt).first()
+            repo = ProductoRepository(session)
+            pi = repo.get_producto_ingrediente(producto_id, ingrediente_id)
             if not pi:
                 return None
 
             pi.cantidad = cantidad
-            session.add(pi)
+            uow.add(pi)
 
             # Recalculate price after quantity change
             ProductoService._recalcular_precio_producto(session, producto_id)

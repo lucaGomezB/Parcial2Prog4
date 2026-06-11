@@ -20,6 +20,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { pedidosApi, type Pedido, type DetallePedido, type StockInsuficienteDetalle } from "../api/pedidos";
+import { pagosApi, type PagoRead } from "../api/pagos";
 import { getUserRoles } from "../api/client";
 import { AxiosError } from "axios";
 
@@ -70,8 +71,37 @@ const ETIQUETAS_ESTADO: Record<string, string> = {
  * These are a copy of the product name/price at the time the order was placed.
  * If prices change later, existing orders still show the original agreed prices.
  */
-function DetallesPopup({ pedido, detalles, onClose, esGestor }: {
-  pedido: Pedido; detalles: DetallePedido[]; onClose: () => void; esGestor?: boolean;
+/**
+ * Returns a human-readable label for a MercadoPago payment status.
+ */
+function mpStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    pending: "Pendiente",
+    approved: "Aprobado",
+    rejected: "Rechazado",
+    refunded: "Reintegrado",
+    cancelled: "Cancelado",
+    in_process: "En proceso",
+    in_mediation: "En mediacion",
+    charged_back: "Contracargo",
+  };
+  return labels[status] || status;
+}
+
+/**
+ * Color classes for MercadoPago payment status badges.
+ */
+const MP_STATUS_COLORS: Record<string, string> = {
+  pending: "bg-yellow-100 text-yellow-800",
+  approved: "bg-green-100 text-green-800",
+  rejected: "bg-red-100 text-red-800",
+  refunded: "bg-purple-100 text-purple-800",
+  cancelled: "bg-gray-100 text-gray-800",
+  in_process: "bg-blue-100 text-blue-800",
+};
+
+function DetallesPopup({ pedido, detalles, onClose, esGestor, pagos }: {
+  pedido: Pedido; detalles: DetallePedido[]; onClose: () => void; esGestor?: boolean; pagos?: PagoRead[];
 }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
@@ -89,6 +119,10 @@ function DetallesPopup({ pedido, detalles, onClose, esGestor }: {
           ) : (
             <span className="text-green-600">Retiro en el local</span>
           )}
+        </p>
+        <p className="text-sm mb-3">
+          <span className="font-medium">Metodo de pago:</span>{" "}
+          {pedido.forma_pago_codigo === "MERCADOPAGO" ? "MercadoPago" : "Efectivo"}
         </p>
         <table className="w-full border-collapse border mb-4">
           <thead><tr className="bg-gray-200">
@@ -108,9 +142,44 @@ function DetallesPopup({ pedido, detalles, onClose, esGestor }: {
             ))}
           </tbody>
         </table>
-        <div className="text-right text-lg font-bold">
+        <div className="text-right text-lg font-bold mb-4">
           Total: <span className="text-blue-700">${parseFloat(pedido.total).toFixed(2)}</span>
         </div>
+
+        {/* Payment status section — only for gestor users */}
+        {esGestor && pagos && pagos.length > 0 && (
+          <>
+            <h3 className="text-md font-semibold mb-2 border-t pt-3">Pagos</h3>
+            <table className="w-full border-collapse border">
+              <thead><tr className="bg-gray-100">
+                <th className="border p-2 text-left">Estado</th>
+                <th className="border p-2 text-right">Monto</th>
+                <th className="border p-2 text-left">Detalle</th>
+                <th className="border p-2 text-left">Metodo</th>
+                <th className="border p-2 text-left">Fecha</th>
+              </tr></thead>
+              <tbody>
+                {pagos.map((p) => (
+                  <tr key={p.id} className="border-b hover:bg-gray-50">
+                    <td className="p-2">
+                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${MP_STATUS_COLORS[p.mp_status] || "bg-gray-100"}`}>
+                        {mpStatusLabel(p.mp_status)}
+                      </span>
+                    </td>
+                    <td className="p-2 text-right font-mono">${p.transaction_amount.toFixed(2)}</td>
+                    <td className="p-2 text-xs text-gray-600">{p.mp_status_detail || "-"}</td>
+                    <td className="p-2 text-xs">{p.payment_method_id || "-"}</td>
+                    <td className="p-2 text-xs">
+                      {new Date(p.created_at).toLocaleDateString("es-AR", {
+                        day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+                      })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
       </div>
     </div>
   );
@@ -275,6 +344,7 @@ export default function PedidosPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detailPopup, setDetailPopup] = useState<Pedido | null>(null);
+  const [pagosMap, setPagosMap] = useState<Record<number, PagoRead[]>>({});
   const [mensaje, setMensaje] = useState<{tipo: 'exito' | 'error'; texto: string} | null>(null);
   const [modo, setModo] = useState<ModoVista>("activos");
   const [stockIssue, setStockIssue] = useState<{ pedido: Pedido; detalles: StockInsuficienteDetalle[] } | null>(null);
@@ -523,7 +593,17 @@ export default function PedidosPage() {
                   <td className="p-2">
                     <div className="flex gap-1 flex-wrap">
                       <button
-                        onClick={() => setDetailPopup(ped)}
+                        onClick={async () => {
+                          setDetailPopup(ped);
+                          if (esGestor && !pagosMap[ped.id]) {
+                            try {
+                              const pagos = await pagosApi.getPagosByPedido(ped.id);
+                              setPagosMap((prev) => ({ ...prev, [ped.id]: pagos }));
+                            } catch {
+                              // Payment data is optional — silently ignore errors
+                            }
+                          }
+                        }}
                         className="bg-gray-600 text-white px-2 py-1 rounded text-xs cursor-pointer hover:bg-gray-700"
                       >
                         Ver Detalles
@@ -562,6 +642,7 @@ export default function PedidosPage() {
           detalles={detailPopup.detalles ?? []}
           onClose={() => setDetailPopup(null)}
           esGestor={esGestor}
+          pagos={pagosMap[detailPopup.id]}
         />
       )}
 

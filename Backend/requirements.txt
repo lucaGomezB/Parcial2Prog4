@@ -1,6 +1,7 @@
 # Web Framework & ORM
 fastapi
-sqlmodel
+sqlmodel>=0.0.38
+pydantic>=2.13.0
 
 # Servidor ASGI (Indispensable para correr FastAPI)
 uvicorn[standard]
@@ -19,3 +20,6 @@ bcrypt
 
 # Rate Limiting
 slowapi
+
+# MercadoPago Integration
+mercadopago==2.4.0

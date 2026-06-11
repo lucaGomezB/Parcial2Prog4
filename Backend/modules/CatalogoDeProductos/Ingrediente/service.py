@@ -9,11 +9,12 @@ Key behaviors:
 """
 from decimal import Decimal
 
-from sqlmodel import Session, select, col
+from sqlmodel import Session
 from typing import List, Optional
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from .models import Ingrediente
+from .repository import IngredienteRepository
 from .schemas import IngredienteCreate, IngredienteRead, IngredienteUpdate
 from models.base import get_utc_now
 from ..uow import CatalogoDeProductosUnitOfWork
@@ -43,27 +44,20 @@ class IngredienteService:
     def get_all(session: Session, skip: int = 0, limit: int = 100) -> List[IngredienteRead]:
         """List non-deleted ingredients with pagination.
 
-        Read-only: no UoW because commit() would expire ORM objects,
-        breaking FastAPI serialization.
+        Read-only: uses repository directly (no UoW) to avoid commit/expire.
         """
-        stmt = (
-            select(Ingrediente)
-            .where(col(Ingrediente.deleted_at).is_(None))
-            .offset(skip).limit(limit)
-            .order_by(Ingrediente.id.desc())
-        )
-        rows = session.exec(stmt).all()
+        repo = IngredienteRepository(session)
+        rows = repo.get_all_paginated(skip=skip, limit=limit)
         return [IngredienteRead.model_validate(r) for r in rows]
 
     @staticmethod
     def get_by_id(session: Session, ingrediente_id: int) -> Optional[IngredienteRead]:
-        """Fetch a single non-deleted ingredient by ID."""
-        stmt = (
-            select(Ingrediente)
-            .where(Ingrediente.id == ingrediente_id)
-            .where(col(Ingrediente.deleted_at).is_(None))
-        )
-        row = session.exec(stmt).first()
+        """Fetch a single non-deleted ingredient by ID.
+
+        Read-only: uses repository directly (no UoW).
+        """
+        repo = IngredienteRepository(session)
+        row = repo.get_by_id(ingrediente_id)
         if not row:
             return None
         return IngredienteRead.model_validate(row)

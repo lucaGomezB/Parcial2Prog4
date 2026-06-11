@@ -34,6 +34,7 @@ from modules.VentasPagosTrazabilidad.FormaPago.router import router as forma_pag
 from modules.VentasPagosTrazabilidad.Pedido.router import router as pedido_router
 from modules.VentasPagosTrazabilidad.EstadoPedido.router import router as estado_pedido_router
 from modules.VentasPagosTrazabilidad.HistorialEstadoPedido.router import router as historial_estado_router
+from modules.VentasPagosTrazabilidad.Pago.router import router as pago_router
 from modules.CatalogoDeProductos.Categoria.models import Categoria
 from modules.CatalogoDeProductos.Producto.models import Producto
 from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
@@ -139,6 +140,7 @@ app.include_router(estado_pedido_router)
 app.include_router(forma_pago_router)
 app.include_router(pedido_router)
 app.include_router(historial_estado_router)
+app.include_router(pago_router)
 
 
 @app.get("/")
