@@ -15,21 +15,75 @@
  *   roles = []    → guest (no token, browsing publicly)
  *   roles = [...] → authenticated with roles, e.g. ["ADMIN", "CLIENTE"]
  *
- * Security note: ALL state is kept in memory ONLY. Nothing is persisted to
- * localStorage or sessionStorage. On page reload the store resets to initial
- * values, and refreshSession() in client.ts restores the session via the
- * httpOnly refresh cookie. This design prevents XSS-based token theft.
+ * Persistence: The store saves accessToken + user to localStorage so the
+ * session survives page reloads. On init, it hydrates from localStorage.
  */
 import { create } from 'zustand'
 import type { UserInfo } from '../api/client'
 
+// ── localStorage keys ──
+const LS_ACCESS_TOKEN = 'auth_accessToken'
+const LS_EXPIRES_AT = 'auth_expiresAt'
+const LS_USER = 'auth_user'
+
+/** Reads a value from localStorage, returning null on error/missing. */
+function lsRead<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw === null) return null
+    return JSON.parse(raw) as T
+  } catch {
+    return null
+  }
+}
+
+/** Writes a value to localStorage (null = remove). */
+function lsWrite<T>(key: string, value: T | null): void {
+  try {
+    if (value === null) {
+      localStorage.removeItem(key)
+    } else {
+      localStorage.setItem(key, JSON.stringify(value))
+    }
+  } catch {
+    // localStorage might be full or blocked — silently ignore
+  }
+}
+
+/** Hydrate initial state from localStorage. */
+function hydrateFromLS() {
+  const accessToken = lsRead<string>(LS_ACCESS_TOKEN)
+  const expiresAt = lsRead<number>(LS_EXPIRES_AT)
+  const user = lsRead<UserInfo>(LS_USER)
+  const isAuthenticated = !!(accessToken && user)
+
+  // If token expired, clear everything
+  if (isAuthenticated && expiresAt && Date.now() > expiresAt) {
+    lsWrite(LS_ACCESS_TOKEN, null)
+    lsWrite(LS_EXPIRES_AT, null)
+    lsWrite(LS_USER, null)
+    return {
+      user: null,
+      roles: null,
+      accessToken: null,
+      expiresAt: null,
+      isAuthenticated: false,
+      isLoading: false,
+    }
+  }
+
+  return {
+    user,
+    roles: user?.roles ?? null,
+    accessToken,
+    expiresAt,
+    isAuthenticated,
+    isLoading: false,
+  }
+}
+
 // ── Types ──
 
-/**
- * roles = null   → undetermined / needs login
- * roles = []     → guest (browsing without a token)
- * roles = [...]  → authenticated with those roles
- */
 export interface AuthState {
   user: UserInfo | null
   roles: string[] | null
@@ -66,100 +120,78 @@ type AuthStore = AuthState & AuthActions
 /**
  * Store definition.
  *
- * Initial state: everything at null or false. On page reload, the store
- * starts empty. The bootstrap effect in App.tsx calls refreshSession()
- * to restore the session from the httpOnly cookie if one exists.
- *
- * Why in-memory instead of localStorage?
- *   The JWT access token is sensitive. Storing it in localStorage makes it
- *   accessible to any JavaScript running on the same origin, which means an
- *   XSS vulnerability could leak it. Keeping it in memory means it is lost
- *   on page reload (which triggers a fresh refreshSession() call via the
- *   httpOnly cookie, which the attacker cannot read).
+ * Hydrates from localStorage on creation so the session survives page reloads.
+ * Every state change syncs back to localStorage automatically.
  */
 export const useAuthStore = create<AuthStore>((set) => ({
-  // ── Initial state ──
-  user: null,
-  roles: null,
-  accessToken: null,
-  expiresAt: null,
-  isAuthenticated: false,
-  isLoading: false,
+  // ── Initial state (hydrated from localStorage) ──
+  ...hydrateFromLS(),
 
   // ── Actions ──
 
-  /**
-   * Called after a successful login. Stores the JWT (with computed expiry
-   * timestamp in milliseconds), the user profile, and marks the session
-   * as authenticated.
-   *
-   * expiresAt = Date.now() + expiresIn * 1000
-   *   (the backend sends expiresIn in seconds; we convert to ms for comparison).
-   */
-  login: (accessToken, expiresIn, user) => set({
-    accessToken,
-    expiresAt: Date.now() + expiresIn * 1000,
-    user,
-    roles: user.roles,
-    isAuthenticated: true,
-    isLoading: false,
-  }),
+  login: (accessToken, expiresIn, user) => {
+    const expiresAt = Date.now() + expiresIn * 1000
+    // Persist to localStorage
+    lsWrite(LS_ACCESS_TOKEN, accessToken)
+    lsWrite(LS_EXPIRES_AT, expiresAt)
+    lsWrite(LS_USER, user)
 
-  /**
-   * Resets everything to the initial (unauthenticated) state.
-   * Should also trigger a POST to /auth/logout on the backend to
-   * invalidate the httpOnly refresh cookie server-side.
-   */
-  logout: () => set({
-    user: null,
-    roles: null,
-    accessToken: null,
-    expiresAt: null,
-    isAuthenticated: false,
-    isLoading: false,
-  }),
+    set({
+      accessToken,
+      expiresAt,
+      user,
+      roles: user.roles,
+      isAuthenticated: true,
+      isLoading: false,
+    })
+  },
 
-  /** Updates only the roles array. Useful when roles change mid-session. */
+  logout: () => {
+    // Clear localStorage
+    lsWrite(LS_ACCESS_TOKEN, null)
+    lsWrite(LS_EXPIRES_AT, null)
+    lsWrite(LS_USER, null)
+
+    set({
+      user: null,
+      roles: null,
+      accessToken: null,
+      expiresAt: null,
+      isAuthenticated: false,
+      isLoading: false,
+    })
+  },
+
   setRoles: (roles) => set({ roles }),
 
-  /** Controls the loading flag for the initial session verification spinner. */
   setLoading: (loading) => set({ isLoading: loading }),
 
-  /**
-   * Updates the access token and its expiry without touching user data.
-   * Used by the refresh interceptor after a successful token renewal.
-   */
-  setSession: (accessToken, expiresIn) => set({
-    accessToken,
-    expiresAt: Date.now() + expiresIn * 1000,
-  }),
+  setSession: (accessToken, expiresIn) => {
+    const expiresAt = Date.now() + expiresIn * 1000
+    // Persist to localStorage
+    lsWrite(LS_ACCESS_TOKEN, accessToken)
+    lsWrite(LS_EXPIRES_AT, expiresAt)
 
-  /**
-   * Sets the full user profile and marks the session as authenticated.
-   * Roles are extracted from the user object automatically.
-   */
-  setUser: (user) => set({
-    user,
-    roles: user.roles,
-    isAuthenticated: true,
-  }),
+    set({
+      accessToken,
+      expiresAt,
+    })
+  },
+
+  setUser: (user) => {
+    // Persist to localStorage
+    lsWrite(LS_USER, user)
+
+    set({
+      user,
+      roles: user.roles,
+      isAuthenticated: true,
+    })
+  },
 }))
 
 // ── Selectors ──
 
-/**
- * Pre-defined selectors for fine-grained reactivity.
- *
- * Each selector extracts a single slice of the store so that a component
- * only re-renders when its specific slice changes, not when any part of
- * the store changes.
- *
- * Usage:
- *   const user = useAuthUser()            // re-renders only when user changes
- *   const roles = useAuthRoles()          // re-renders only when roles change
- *   const authed = useIsAuthenticated()   // re-renders only on login/logout
- *   const loading = useIsLoading()        // re-renders only when loading toggles
- */
 export const useAuthUser = () => useAuthStore((s) => s.user)
 export const useAuthRoles = () => useAuthStore((s) => s.roles)
 export const useIsAuthenticated = () => useAuthStore((s) => s.isAuthenticated)

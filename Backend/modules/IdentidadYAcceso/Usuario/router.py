@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session
 from typing import Optional, List
 from core.database import get_session
+from core.paginated_response import PaginatedResponse
 from modules.IdentidadYAcceso.Auth.dependencies import require_roles
 from .schemas import UsuarioCreate, UsuarioRead, UsuarioReadWithRoles, UsuarioUpdateWithRoles
 from . import service
@@ -35,11 +36,12 @@ def create_user(datos: UsuarioCreate, session: Session = Depends(get_session)):
     return service.crear_usuario(session, datos)
 
 
-@router.get("/", response_model=List[UsuarioReadWithRoles],
+@router.get("/", response_model=PaginatedResponse[UsuarioReadWithRoles],
             dependencies=[Depends(require_roles(["ADMIN"]))])
 def list_usuarios(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    incluir_eliminados: bool = Query(False, description="Incluir usuarios soft-deleteados (solo ADMIN)"),
     rol_codigo: Optional[str] = Query(None, description="Filter by role code (e.g., ADMIN, CLIENT)"),
     session: Session = Depends(get_session),
 ):
@@ -48,20 +50,25 @@ def list_usuarios(
 
     Paginated: skip (offset) and limit (max 500) prevent unbounded queries.
     Optional rol_codigo filters users by a specific role.
+    Optional incluir_eliminados includes soft-deleted records (ADMIN only).
     Returns each user with their assigned roles. ADMIN only.
     """
-    return service.listar_usuarios(session, skip=skip, limit=limit, rol_codigo=rol_codigo)
+    return service.listar_usuarios(session, skip=skip, limit=limit, rol_codigo=rol_codigo, incluir_eliminados=incluir_eliminados)
 
 
 @router.get("/{usuario_id}", response_model=UsuarioReadWithRoles,
             dependencies=[Depends(require_roles(["ADMIN"]))])
-def get_usuario(usuario_id: int, session: Session = Depends(get_session)):
+def get_usuario(
+    usuario_id: int,
+    incluir_eliminados: bool = Query(False, description="Incluir usuarios soft-deleteados (solo ADMIN)"),
+    session: Session = Depends(get_session),
+):
     """
     GET /usuarios/{usuario_id} — Get a single user by ID with roles.
 
     Returns 404 if the user does not exist or has been soft-deleted. ADMIN only.
     """
-    usuario = service.obtener_usuario(session, usuario_id)
+    usuario = service.obtener_usuario(session, usuario_id, incluir_eliminados=incluir_eliminados)
     if not usuario:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
     return usuario

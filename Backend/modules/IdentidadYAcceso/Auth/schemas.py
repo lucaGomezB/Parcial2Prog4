@@ -24,18 +24,16 @@ class TokenResponse(BaseModel):
     """
     Response body returned after successful authentication.
 
-    Contains the access_token (short-lived JWT) and refresh_token
-    (long-lived, opaque). The refresh_token is also set as an httpOnly
-    cookie; the body alternative exists for mobile/non-browser clients.
+    Contains the access_token (short-lived JWT). The refresh_token
+    is set exclusively as an httpOnly cookie and is NOT included
+    in the response body for security reasons (XSS protection).
 
     Attributes:
         access_token: JWT string for Authorization header.
-        refresh_token: Opaque hex string for token refresh.
         token_type: Always "bearer" per RFC 6750.
         expires_in: Access token lifetime in seconds.
     """
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
     expires_in: int
 

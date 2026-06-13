@@ -44,7 +44,7 @@ class UsuarioRepository(BaseRepository[Usuario]):
             .join(UsuarioRol, Usuario.id == UsuarioRol.usuario_id)
             .where(UsuarioRol.rol_codigo == rol_codigo)
         )
-        if self._is_soft_delete:
+        if self._is_soft_delete and not self._incluir_eliminados:
             statement = statement.where(col(Usuario.deleted_at).is_(None))
         statement = (
             statement
@@ -54,6 +54,37 @@ class UsuarioRepository(BaseRepository[Usuario]):
             .order_by(Usuario.id.desc())
         )
         return self.session.exec(statement).all()
+
+    def count_by_role(self, rol_codigo: str) -> int:
+        """
+        Count active (non-deleted) users assigned to a specific role.
+
+        Uses an INNER JOIN through UsuarioRol. Only counts users where
+        deleted_at IS NULL (not soft-deleted).
+        """
+        from sqlmodel import func
+
+        statement = (
+            select(func.count(Usuario.id))
+            .join(UsuarioRol, Usuario.id == UsuarioRol.usuario_id)
+            .where(UsuarioRol.rol_codigo == rol_codigo)
+        )
+        if self._is_soft_delete:
+            from sqlalchemy import column
+
+            statement = statement.where(column("deleted_at").is_(None))
+        result = self.session.exec(statement)
+        return result.one()
+
+    def count_all(self) -> int:
+        """Count all users respecting soft-delete filter."""
+        from sqlmodel import func
+        statement = select(func.count()).select_from(self.model_class)
+        if self._is_soft_delete and not self._incluir_eliminados:
+            from sqlalchemy import column
+            statement = statement.where(column("deleted_at").is_(None))
+        result = self.session.exec(statement)
+        return result.one()
 
     def get_with_roles(self, usuario_id: int):
         """Fetch a user by ID with eager-loaded roles relationship.
@@ -66,4 +97,8 @@ class UsuarioRepository(BaseRepository[Usuario]):
             .where(Usuario.id == usuario_id)
             .options(selectinload(Usuario.roles))
         )
+        if self._is_soft_delete and not self._incluir_eliminados:
+            from sqlalchemy import column
+
+            statement = statement.where(column("deleted_at").is_(None))
         return self.session.exec(statement).first()

@@ -17,10 +17,11 @@ from fastapi import HTTPException, status
 from sqlmodel import Session
 
 from core.security import get_password_hash
+from core.paginated_response import PaginatedResponse
 
 from .models import Usuario
 from .repository import UsuarioRepository
-from .schemas import UsuarioCreate, UsuarioUpdateWithRoles
+from .schemas import UsuarioCreate, UsuarioReadWithRoles, UsuarioUpdateWithRoles
 from ..Rol.models import Rol
 from ..uow import IdentidadYAccesoUnitOfWork
 
@@ -77,27 +78,53 @@ def listar_usuarios(
     skip: int = 0,
     limit: int = 100,
     rol_codigo: Optional[str] = None,
-) -> List[Usuario]:
+    incluir_eliminados: bool = False,
+) -> PaginatedResponse[UsuarioReadWithRoles]:
     """
     List users with pagination and optional role filtering.
 
     When rol_codigo is provided, filters by the UsuarioRol join table.
     Otherwise, returns all non-deleted users ordered by ID descending.
+    When incluir_eliminados is True, includes soft-deleted records.
     """
-    with IdentidadYAccesoUnitOfWork(session) as uow:
-        if rol_codigo:
-            return uow.usuarios.get_all_by_role(rol_codigo, skip=skip, limit=limit)
-        return uow.usuarios.get_all(skip=skip, limit=limit)
+    repo = UsuarioRepository(session)
+    if incluir_eliminados:
+        repo.with_deleted(True)
+
+    if rol_codigo:
+        rows = repo.get_all_by_role(rol_codigo, skip=skip, limit=limit)
+    else:
+        rows = repo.get_all(skip=skip, limit=limit)
+
+    # Count with the same filters
+    count_repo = UsuarioRepository(session)
+    if incluir_eliminados:
+        count_repo.with_deleted(True)
+    if rol_codigo:
+        total = count_repo.count_by_role(rol_codigo)
+    else:
+        total = count_repo.count_all()
+
+    items = [UsuarioReadWithRoles.model_validate(u) for u in rows]
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+    )
 
 
-def obtener_usuario(session: Session, usuario_id: int) -> Optional[Usuario]:
+def obtener_usuario(session: Session, usuario_id: int, incluir_eliminados: bool = False) -> Optional[Usuario]:
     """
     Retrieve a single user by ID with eager-loaded roles.
 
     Returns None if the user is not found or has been soft-deleted
     (the repository base already filters deleted_at IS NULL).
+    When incluir_eliminados is True, includes soft-deleted records.
     """
     repo = UsuarioRepository(session)
+    if incluir_eliminados:
+        repo.with_deleted(True)
     return repo.get_with_roles(usuario_id)
 
 
@@ -117,6 +144,17 @@ def actualizar_usuario(
         usuario = uow.usuarios.get_by_id(usuario_id)
         if not usuario:
             return None
+
+        # Proteccion: impedir que el unico ADMIN del sistema pierda su rol
+        if datos.roles_codigos is not None and "ADMIN" not in datos.roles_codigos:
+            user_has_admin = any(rol.codigo == "ADMIN" for rol in usuario.roles)
+            if user_has_admin:
+                admin_count = uow.usuarios.count_by_role("ADMIN")
+                if admin_count <= 1:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="No puedes remover el rol ADMIN del unico administrador del sistema",
+                    )
 
         # Update scalar fields only (exclude roles from dict update)
         values = datos.model_dump(exclude_unset=True, exclude={"roles_codigos"})

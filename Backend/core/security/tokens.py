@@ -24,9 +24,11 @@ class TokenData(BaseModel):
     Attributes:
         user_id: Database ID of the authenticated user.
         email: Email of the authenticated user (for display purposes).
+        roles: List of role codes assigned to the user (e.g., ["CLIENT", "ADMIN"]).
     """
     user_id: int
     email: str
+    roles: list[str] = []
 
 
 def create_access_token(data: TokenData, expires_delta: timedelta | None = None) -> str:

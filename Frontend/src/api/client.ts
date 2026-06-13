@@ -10,10 +10,13 @@
  *  - Backward-compatible wrappers (`apiFetch`, `apiFetchOptional`) for modules
  *    that previously used the native Fetch API.
  *
- * Security note: The JWT access token is kept only in memory (Zustand store).
- * It is NEVER persisted to localStorage. The refresh token is an httpOnly cookie
- * managed entirely by the backend, making it inaccessible to JavaScript and
- * therefore immune to XSS-based theft.
+ * Security note: The JWT access token is currently persisted to localStorage
+ * for session survival across page reloads. This is a known trade-off: it
+ * enables seamless refresh but is technically vulnerable to XSS. Future
+ * iterations should consider keeping the token in memory only and relying
+ * exclusively on the httpOnly refresh cookie for session restoration.
+ * The refresh token itself is an httpOnly cookie managed entirely by the
+ * backend, making it inaccessible to JavaScript.
  */
 import axios, { AxiosError } from "axios";
 import type { InternalAxiosRequestConfig } from "axios";
@@ -66,9 +69,9 @@ const apiClient = axios.create({
   withCredentials: true,
 });
 
-// ── Token Management (in-memory only — never localStorage) ──
+// ── Token Management (persisted to localStorage, survives page reload) ──
 
-/** Clean up any legacy localStorage tokens on import (migration safeguard). */
+/** Clean up any legacy localStorage keys from previous versions. */
 ;(() => {
   localStorage.removeItem("authToken");
   localStorage.removeItem("userInfo");

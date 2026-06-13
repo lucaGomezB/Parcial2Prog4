@@ -11,7 +11,8 @@ from fastapi import HTTPException, status
 from sqlmodel import Session
 from .models import Categoria
 from .repository import CategoriaRepository
-from .schemas import CategoriaCreate, CategoriaUpdate
+from .schemas import CategoriaCreate, CategoriaRead, CategoriaUpdate
+from core.paginated_response import PaginatedResponse
 from models.base import get_utc_now
 from ..uow import CatalogoDeProductosUnitOfWork
 
@@ -20,13 +21,20 @@ class CategoriaService:
     """Business logic for Category CRUD and validation."""
 
     @staticmethod
-    def get_all(session: Session, skip: int = 0, limit: int = 100, parent_id: int | None = None) -> List[Categoria]:
+    def get_all(session: Session, skip: int = 0, limit: int = 100, parent_id: int | None = None) -> PaginatedResponse[CategoriaRead]:
         """List categories with optional parent_id filter for subtree navigation.
 
         Read-only: uses repository directly (no UoW) to avoid commit/expire.
         """
         repo = CategoriaRepository(session)
-        return repo.get_all(skip=skip, limit=limit, parent_id=parent_id)
+        rows = repo.get_all(skip=skip, limit=limit, parent_id=parent_id)
+        total = repo.count_all()
+        return PaginatedResponse(
+            items=[CategoriaRead.model_validate(r) for r in rows],
+            total=total,
+            skip=skip,
+            limit=limit,
+        )
 
     @staticmethod
     def get_by_id(session: Session, categoria_id: int) -> Optional[Categoria]:
@@ -72,6 +80,10 @@ class CategoriaService:
                     detail="La categoría padre indicada no existe"
                 )
 
+        # Prevent self-reference (safety check — only applies in theory for create)
+        # Not needed here because the category doesn't have an ID yet at creation time.
+        # But validate parent exists (already done above).
+
         with CatalogoDeProductosUnitOfWork(session) as uow:
             db_categoria = Categoria(**data.model_dump())
             uow.categorias.add(db_categoria)
@@ -81,13 +93,43 @@ class CategoriaService:
 
     @staticmethod
     def update(session: Session, categoria_id: int, data: CategoriaUpdate) -> Optional[Categoria]:
-        """Update an existing category. Only provided fields are modified."""
+        """Update an existing category. Only provided fields are modified.
+        
+        Validates:
+        - No self-reference (parent_id != self.id)
+        - No cycles in hierarchy (walk up parent chain to detect loops)
+        """
+        repo = CategoriaRepository(session)
+        
         with CatalogoDeProductosUnitOfWork(session) as uow:
             db_categoria = uow.categorias.get_by_id(categoria_id)
             if not db_categoria:
                 return None
 
             values = data.model_dump(exclude_unset=True)
+            
+            # Prevent self-reference: a category cannot be its own parent
+            if "parent_id" in values and values["parent_id"] is not None:
+                new_parent_id = values["parent_id"]
+                
+                # Direct self-reference check
+                if new_parent_id == categoria_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Una categoría no puede ser padre de sí misma"
+                    )
+                
+                # Cycle detection: walk up the new parent's chain
+                # If we encounter categoria_id, setting this parent would create a cycle
+                current = repo.get_by_id(new_parent_id)
+                while current is not None and current.parent_id is not None:
+                    if current.parent_id == categoria_id:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="La categoría padre seleccionada crearía un ciclo en la jerarquía"
+                        )
+                    current = repo.get_by_id(current.parent_id)
+
             for key, value in values.items():
                 setattr(db_categoria, key, value)
 

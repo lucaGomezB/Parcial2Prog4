@@ -44,6 +44,7 @@ class HistorialEstadoPedido(SQLModel, table=True):
     estado_hacia: str = Field(foreign_key="estadopedido.codigo", nullable=False)
     usuario_id: Optional[int] = Field(default=None, foreign_key="usuario.id", ondelete="SET NULL")
     motivo: Optional[str] = Field(default=None)
+    es_sistema: bool = Field(default=False)
 
     # Only created_at — no updated_at (append-only, never modified)
     created_at: datetime = Field(default_factory=get_utc_now, nullable=False)

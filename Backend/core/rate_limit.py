@@ -7,7 +7,7 @@ by the client's remote IP address via get_remote_address.
 
 Limits are applied at the endpoint level in router files.
 Configured limits:
-- Login: 5 requests per minute per IP (brute-force protection).
+- Login: 5 requests per 15 minutes per IP (brute-force protection).
 - Other endpoints can be individually decorated as needed.
 
 Slowapi is initialized by creating a global Limiter instance with the

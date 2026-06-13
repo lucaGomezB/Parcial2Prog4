@@ -16,7 +16,7 @@ of theft.
 """
 
 import hashlib
-import secrets
+import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 from sqlmodel import Session
@@ -25,7 +25,6 @@ from core.security import verify_password, create_access_token
 from modules.IdentidadYAcceso.Usuario.models import Usuario
 from modules.IdentidadYAcceso.RefreshToken.models import RefreshToken
 from ..uow import IdentidadYAccesoUnitOfWork
-from .repository import AuthRepository
 from models.base import get_utc_now
 
 
@@ -38,8 +37,8 @@ def authenticate_user(session: Session, email: str, password: str) -> Usuario | 
     email does not exist or the password is wrong, to prevent
     user enumeration attacks.
     """
-    repo = AuthRepository(session)
-    user = repo.find_by_email(email)
+    with IdentidadYAccesoUnitOfWork(session) as uow:
+        user = uow.usuarios.get_by_email(email)
 
     if not user:
         return None
@@ -52,17 +51,16 @@ def authenticate_user(session: Session, email: str, password: str) -> Usuario | 
 
 def create_refresh_token(session: Session, usuario_id: int) -> str:
     """
-    Generate a new refresh token and store its SHA-256 hash in the database.
+    Generate a new refresh token (UUID v4) and store its SHA-256 hash in the database.
 
-    The raw token (64-char hex string) is returned to the caller for
+    The raw token (UUID v4 string) is returned to the caller for
     placement in an httpOnly cookie. Only the hash is persisted,
     ensuring that database compromise does not expose valid tokens.
 
     The token expires after 7 days (configurable via REFRESH_TOKEN_EXPIRE_DAYS).
     """
-    token_bytes = secrets.token_bytes(32)
-    raw_token = token_bytes.hex()
-    token_hash = hashlib.sha256(token_bytes).hexdigest()
+    raw_token = str(uuid.uuid4())
+    token_hash = hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
 
     now = get_utc_now()
     expires_at = now + timedelta(days=7)
@@ -87,13 +85,12 @@ def validate_refresh_token(session: Session, raw_token: str) -> Optional[Refresh
     neither expired nor revoked. Returns the RefreshToken object
     if valid, None otherwise.
 
-    NOTE: The hash is computed from the RAW BINARY bytes (not the hex string)
+    NOTE: The hash is computed from the UTF-8 string representation of the UUID
     to match how create_refresh_token stores it:
-        token_bytes = secrets.token_bytes(32)
-        token_hash = sha256(token_bytes).hexdigest()  # hash of 32 raw bytes
+        raw_token = str(uuid.uuid4())
+        token_hash = sha256(raw_token.encode('utf-8')).hexdigest()
     """
-    raw_bytes = bytes.fromhex(raw_token)
-    token_hash = hashlib.sha256(raw_bytes).hexdigest()
+    token_hash = hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
     with IdentidadYAccesoUnitOfWork(session) as uow:
         return uow.refresh_tokens.get_by_hash(token_hash)
 
@@ -108,8 +105,7 @@ def revoke_refresh_token(session: Session, raw_token: str) -> bool:
 
     Returns True if the token was found and revoked, False otherwise.
     """
-    raw_bytes = bytes.fromhex(raw_token)
-    token_hash = hashlib.sha256(raw_bytes).hexdigest()
+    token_hash = hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
     with IdentidadYAccesoUnitOfWork(session) as uow:
         stored = uow.refresh_tokens.get_by_hash(token_hash)
         if not stored:

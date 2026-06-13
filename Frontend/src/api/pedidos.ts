@@ -131,6 +131,7 @@ export interface CreatePedidoInput {
     cantidad: number;
     nombre_snapshot: string;
     precio_snapshot: number;
+    personalizacion?: number[];
   }[];
 }
 

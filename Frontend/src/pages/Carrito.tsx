@@ -14,23 +14,16 @@
  *   - Order creation flow: validate -> create -> redirect to /pedidos.
  *   - Empty cart state with a link back to the product listing.
  *
- * Cart data is persisted in localStorage (see ../utils/carrito).
+ * Cart data is persisted in localStorage (see store/cartStore).
  * Direcciones are fetched from the API and cached in local state.
  */
 
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import {
-  getCarrito,
-  removeFromCart,
-  updateCantidad,
-  getTotal,
-  getItemCount,
-  clearCarrito,
-  type CarritoItem,
-} from "../utils/carrito";
+import { useCartStore, type CarritoItem } from "../store/cartStore";
 import { AxiosError } from "axios";
 import { pedidosApi, type ValidarStockDetalle, type ValidarStockInput } from "../api/pedidos";
+import { productosApi, type ProductoIngredienteRead } from "../api/productos";
 import {
   direccionesApi,
   formatDireccion,
@@ -313,7 +306,7 @@ export default function Carrito() {
     }
   }, [navigate]);
 
-  const [items, setItems] = useState<CarritoItem[]>([]);
+  const items = useCartStore((s) => s.items);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [direcciones, setDirecciones] = useState<DireccionEntrega[]>([]);
@@ -324,20 +317,16 @@ export default function Carrito() {
   const [mensaje, setMensaje] = useState<{ tipo: 'exito' | 'error'; texto: string } | null>(null);
   const [formaPago, setFormaPago] = useState<string>("EFECTIVO");
   const [mpCheckoutUrl, setMpCheckoutUrl] = useState<string | null>(null);
-
-  // Sync local state with localStorage on mount
-  useEffect(() => {
-    setItems(getCarrito());
-  }, []);
+  const [ingredientesPorProducto, setIngredientesPorProducto] = useState<Record<number, ProductoIngredienteRead[]>>({});
 
   /**
-   * Re-reads cart from localStorage on window focus.
+   * Re-hydrates cart from localStorage on window focus.
    * This handles cases where the user modifies the cart in another tab
    * or comes back after navigating away.
    */
   useEffect(() => {
     const onFocus = () => {
-      setItems(getCarrito());
+      useCartStore.getState().hydrate();
       cargarDirecciones();
     };
     window.addEventListener("focus", onFocus);
@@ -367,16 +356,37 @@ export default function Carrito() {
     cargarDirecciones();
   }, []);
 
+  /** Load removable ingredients for each product in the cart. */
+  useEffect(() => {
+    const items = useCartStore.getState().items;
+    const ids = [...new Set(items.map(i => i.productoId))];
+
+    Promise.all(
+      ids.map(async (id) => {
+        try {
+          const ingredientes = await productosApi.getIngredientes(id);
+          return { id, ingredientes: ingredientes.filter(i => i.es_removible) };
+        } catch {
+          return { id, ingredientes: [] };
+        }
+      })
+    ).then((results) => {
+      const map: Record<number, ProductoIngredienteRead[]> = {};
+      results.forEach(r => { map[r.id] = r.ingredientes; });
+      setIngredientesPorProducto(map);
+    });
+  }, []);
+
   /** Removes an item from the cart entirely. */
   const handleRemove = (productoId: number) => {
-    setItems(removeFromCart(productoId));
+    useCartStore.getState().removeFromCart(productoId);
   };
 
   /** Increments quantity for a cart item. */
   const handleIncrement = (productoId: number) => {
     const item = items.find((i) => i.productoId === productoId);
     if (item) {
-      setItems(updateCantidad(productoId, item.cantidad + 1));
+      useCartStore.getState().updateCantidad(productoId, item.cantidad + 1);
     }
   };
 
@@ -384,7 +394,7 @@ export default function Carrito() {
   const handleDecrement = (productoId: number) => {
     const item = items.find((i) => i.productoId === productoId);
     if (item && item.cantidad > 1) {
-      setItems(updateCantidad(productoId, item.cantidad - 1));
+      useCartStore.getState().updateCantidad(productoId, item.cantidad - 1);
     }
   };
 
@@ -397,8 +407,8 @@ export default function Carrito() {
    * 4. Handles 409 Conflict errors (race condition on stock).
    */
   const doRealizarPedido = async () => {
-    // Read fresh items from localStorage to avoid stale closure
-    const currentItems = getCarrito();
+    // Read fresh items from Zustand store to avoid stale closure
+    const currentItems = useCartStore.getState().items;
     if (currentItems.length === 0) return;
     setEnviando(true);
     setError(null);
@@ -422,7 +432,7 @@ export default function Carrito() {
       const direccionId = typeof direccionSelId === "number" ? direccionSelId : undefined;
       const pedido = await pedidosApi.create({
         forma_pago_codigo: formaPago,
-        subtotal: getTotal(),
+        subtotal: useCartStore.getState().getTotal(),
         descuento: 0,
         costo_envio: direccionId ? 50 : 0,
         direccion_id: direccionId,
@@ -431,11 +441,11 @@ export default function Carrito() {
           cantidad: i.cantidad,
           nombre_snapshot: i.nombre,
           precio_snapshot: i.precio,
+          ...(i.ingredientesExcluidos.length > 0 ? { personalizacion: i.ingredientesExcluidos } : {}),
         })),
       });
 
-      clearCarrito();
-      setItems([]);
+      useCartStore.getState().clearCarrito();
 
       // Step 3: If MERCADOPAGO, initiate payment and show checkout URL
       if (formaPago === "MERCADOPAGO") {
@@ -504,15 +514,14 @@ export default function Carrito() {
     for (const [key, nuevaCantidad] of Object.entries(ajustes)) {
       const productoId = Number(key);
       if (nuevaCantidad <= 0) {
-        removeFromCart(productoId);
+        useCartStore.getState().removeFromCart(productoId);
       } else {
-        updateCantidad(productoId, nuevaCantidad);
+        useCartStore.getState().updateCantidad(productoId, nuevaCantidad);
       }
     }
     setStockWarnings(null);
-    const freshItems = getCarrito();
-    setItems(freshItems);
-    // Re-submit with fresh items (doRealizarPedido reads from getCarrito internally)
+    const freshItems = useCartStore.getState().items;
+    // Re-submit with fresh items (doRealizarPedido reads from the store internally)
     if (freshItems.length > 0) {
       doRealizarPedido();
     }
@@ -525,8 +534,8 @@ export default function Carrito() {
     setDireccionSelId(nueva.id);
   };
 
-  const total = getTotal();
-  const itemCount = getItemCount();
+  const total = useCartStore((s) => s.getTotal());
+  const itemCount = useCartStore((s) => s.getItemCount());
 
   // Empty cart state
   if (items.length === 0) {
@@ -576,7 +585,29 @@ export default function Carrito() {
         <tbody>
           {items.map((item) => (
             <tr key={item.productoId} className="hover:bg-gray-100 border-b">
-              <td className="p-2">{item.nombre}</td>
+              <td className="p-2">
+                <div>{item.nombre}</div>
+                {ingredientesPorProducto[item.productoId]?.length > 0 && (
+                  <div className="mt-1 space-y-1">
+                    {ingredientesPorProducto[item.productoId].map((ing) => (
+                      <label key={ing.ingrediente_id} className="flex items-center gap-1 text-xs text-gray-600">
+                        <input
+                          type="checkbox"
+                          checked={!item.ingredientesExcluidos.includes(ing.ingrediente_id)}
+                          onChange={() => {
+                            const excluidos = item.ingredientesExcluidos.includes(ing.ingrediente_id)
+                              ? item.ingredientesExcluidos.filter(id => id !== ing.ingrediente_id)
+                              : [...item.ingredientesExcluidos, ing.ingrediente_id];
+                            useCartStore.getState().setIngredientesExcluidos(item.productoId, excluidos);
+                          }}
+                          className="cursor-pointer"
+                        />
+                        {ing.ingrediente_nombre}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </td>
               <td className="p-2">${Number(item.precio).toFixed(2)}</td>
               <td className="p-2 text-center">
                 {/* Quantity controls with +/- buttons */}
@@ -741,8 +772,6 @@ export default function Carrito() {
             </p>
             <a
               href={mpCheckoutUrl}
-              target="_blank"
-              rel="noopener noreferrer"
               className="inline-block bg-blue-600 text-white px-6 py-3 rounded font-semibold hover:bg-blue-700 mb-3"
             >
               Ir a MercadoPago

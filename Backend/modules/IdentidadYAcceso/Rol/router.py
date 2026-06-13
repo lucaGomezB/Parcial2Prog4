@@ -11,7 +11,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
 from core.database import get_session
 from modules.IdentidadYAcceso.Auth.dependencies import require_roles
-from .models import Rol
 from .schemas import RolRead
 from . import service
 
@@ -38,7 +37,7 @@ def read_rol(codigo: str, session: Session = Depends(get_session)):
 
     Restricted to ADMIN users. Returns 404 if not found.
     """
-    rol = session.get(Rol, codigo)
+    rol = service.get_rol_by_codigo(session, codigo)
     if not rol:
         raise HTTPException(status_code=404, detail="Rol no encontrado")
     return rol

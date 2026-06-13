@@ -181,3 +181,13 @@ class ProductoRepository(BaseRepository[Producto]):
             Producto.es_insumo == True,
         )
         return set(self.session.exec(statement).all())
+
+    def count_all(self) -> int:
+        """Count all non-deleted products."""
+        from sqlmodel import func
+        statement = select(func.count()).select_from(self.model_class)
+        if self._is_soft_delete:
+            from sqlalchemy import column
+            statement = statement.where(column("deleted_at").is_(None))
+        result = self.session.exec(statement)
+        return result.one()

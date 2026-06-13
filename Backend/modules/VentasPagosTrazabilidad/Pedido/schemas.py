@@ -102,6 +102,7 @@ class PedidoRead(BaseModel):
     costo_envio: Decimal
     total: Decimal
     notas: Optional[str] = None
+    direccion_snapshot: Optional[dict] = None
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None

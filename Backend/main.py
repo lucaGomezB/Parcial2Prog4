@@ -10,14 +10,17 @@ Router inclusion follows a modular architecture where each domain module
 exposes its own APIRouter.
 """
 
+import os
 import logging
 from decimal import Decimal
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
+from fastapi.exceptions import RequestValidationError
+from core.problem_response import problem_response
 from sqlmodel import Session
 from alembic.config import Config
 from alembic import command
@@ -99,26 +102,30 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     """
     Custom exception handler for rate limit exceeded errors.
 
-    Returns a 429 Too Many Requests response with a user-friendly message
-    in Spanish and a Retry-After header indicating 60 seconds.
+    Returns a 429 Too Many Requests response with RFC 7807 Problem Details
+    and a Retry-After header indicating 900 seconds.
     """
-    from fastapi.responses import JSONResponse
-    response = JSONResponse(
-        status_code=429,
-        content={"detail": "Error: Demasiados intentos fallidos. Por favor vuelva a intentar en unos minutos."},
+    resp = problem_response(
+        status=429,
+        title="Demasiados intentos",
+        detail="Error: Demasiados intentos fallidos. Por favor vuelva a intentar en unos minutos.",
+        instance=str(request.url),
     )
-    response.headers["Retry-After"] = "60"
-    return response
+    resp.headers["Retry-After"] = "900"
+    return resp
 
 
 app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
-# CORS middleware: allows all origins for development.
-# In production, restrict allow_origins to specific frontend domains.
+# CORS middleware: use explicit origins to allow credentials.
+# Reads FRONTEND_URL from .env (e.g., http://localhost:5173).
+cors_origins_str = os.getenv("CORS_ORIGINS", os.getenv("FRONTEND_URL", ""))
+cors_origins = [o.strip() for o in cors_origins_str.split(",") if o.strip()] if cors_origins_str else []
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_origins or ["*"],
+    allow_credentials=bool(cors_origins),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -162,7 +169,51 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
     raw database error traceback.
     """
     logger.error("IntegrityError en %s %s: %s", request.method, request.url.path, exc)
-    return JSONResponse(
-        status_code=400,
-        content={"detail": "Error de integridad en la base de datos (Ej: ID inexistente o duplicado)."},
+    return problem_response(
+        status=400,
+        title="Error de integridad",
+        detail="Error de integridad en la base de datos (Ej: ID inexistente o duplicado).",
+        instance=str(request.url),
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """
+    Global handler for HTTPException that formats responses using RFC 7807.
+
+    Extracts structured information from the exception detail when possible.
+    """
+    detail = exc.detail
+    title = "Error de solicitud"
+
+    # Si detail es un dict, extraer informacion estructurada
+    extra = None
+    if isinstance(detail, dict):
+        title = detail.get("mensaje", detail.get("error", "Error de solicitud"))
+        extra = {k: v for k, v in detail.items() if k not in ("mensaje",)}
+        detail = detail.get("mensaje", detail.get("error", "Error de solicitud"))
+
+    return problem_response(
+        status=exc.status_code,
+        title=title,
+        detail=str(detail) if not isinstance(detail, str) else detail,
+        instance=str(request.url),
+        extra=extra,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    Global handler for Pydantic validation errors (422).
+
+    Formats the response using RFC 7807 with detailed validation error information.
+    """
+    return problem_response(
+        status=422,
+        title="Error de validacion",
+        detail="Los datos enviados no son validos",
+        instance=str(request.url),
+        extra={"errors": exc.errors()},
     )

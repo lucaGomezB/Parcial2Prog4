@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session
 from typing import List
 from core.database import get_session
+from core.paginated_response import PaginatedResponse
 from modules.IdentidadYAcceso.Auth.dependencies import require_roles, get_current_user
 from modules.IdentidadYAcceso.Usuario.models import Usuario
 from .service import PedidoService
@@ -24,11 +25,13 @@ from .schemas import (
     DetallePedidoUpdate,
     ValidarStockInput, ValidarStockResponse,
 )
+from ..HistorialEstadoPedido.service import HistorialEstadoPedidoService
+from ..HistorialEstadoPedido.schemas import HistorialRead
 
 router = APIRouter(prefix="/pedidos", tags=["Pedidos"])
 
 
-@router.get("/", response_model=List[PedidoRead],
+@router.get("/", response_model=PaginatedResponse[PedidoRead],
             dependencies=[Depends(require_roles(["ADMIN", "PEDIDOS"]))])
 def read_all(
     skip: int = Query(0),
@@ -39,7 +42,7 @@ def read_all(
     return PedidoService.get_all(session, skip=skip, limit=limit)
 
 
-@router.get("/activos", response_model=List[PedidoRead])
+@router.get("/activos", response_model=PaginatedResponse[PedidoRead])
 def read_activos(
     skip: int = Query(0),
     limit: int = Query(100),
@@ -55,10 +58,16 @@ def read_activos(
         return PedidoService.get_activos(session, skip=skip, limit=limit)
     # Regular user: filter to their own active orders
     todos_activos = PedidoService.get_activos(session, skip=0, limit=10000)
-    return [p for p in todos_activos if p.usuario_id == current_user.id][skip:skip + limit]
+    items_filtrados = [p for p in todos_activos.items if p.usuario_id == current_user.id]
+    return PaginatedResponse(
+        items=items_filtrados[skip:skip + limit],
+        total=len(items_filtrados),
+        skip=skip,
+        limit=limit,
+    )
 
 
-@router.get("/historial", response_model=List[PedidoRead])
+@router.get("/historial", response_model=PaginatedResponse[PedidoRead])
 def read_historial(
     skip: int = Query(0),
     limit: int = Query(100),
@@ -75,7 +84,7 @@ def read_historial(
     return PedidoService.get_historial_by_usuario(session, current_user.id, skip=skip, limit=limit)
 
 
-@router.get("/mis-pedidos", response_model=List[PedidoRead])
+@router.get("/mis-pedidos", response_model=PaginatedResponse[PedidoRead])
 def read_mis_pedidos(
     skip: int = Query(0),
     limit: int = Query(100),
@@ -110,41 +119,48 @@ def read_one(
     return obj
 
 
+@router.get("/{pedido_id}/historial", response_model=List[HistorialRead])
+def read_historial_pedido(
+    pedido_id: int,
+    session: Session = Depends(get_session),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """GET /pedidos/{id}/historial — Get full state transition history for an order.
+
+    ADMIN/PEDIDOS can see any order's history; regular users can only see their own.
+    Returns the audit trail ordered from oldest to newest, with timestamps.
+    """
+    # First verify the order exists and user has access (same scoping as read_one)
+    obj = PedidoService.get_by_id(session, pedido_id)
+    if not obj:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    if not any(rol.codigo in ("ADMIN", "PEDIDOS") for rol in current_user.roles):
+        if obj.usuario_id != current_user.id:
+            raise HTTPException(status_code=403, detail="No tienes permiso para ver este pedido")
+
+    return HistorialEstadoPedidoService.get_by_pedido(session, pedido_id)
+
+
 @router.post("/", response_model=PedidoRead, status_code=status.HTTP_201_CREATED)
 def create(
     data: PedidoCreate,
     session: Session = Depends(get_session),
     current_user: Usuario = Depends(get_current_user),
-    auto_confirmar: bool = Query(True, description="Auto-advance to CONFIRMADO for client users"),
 ):
     """POST /pedidos — Create a new order.
 
     Logic:
     1. Forces the authenticated user as owner unless ADMIN/PEDIDOS supplies a different user_id
     2. Creates the order in PENDIENTE state with price/name snapshots
-    3. If auto_confirmar=True (default) and user is NOT a manager,
-       automatically advances the order to CONFIRMADO (deducts stock).
+    3. Confirmation (PENDIENTE -> CONFIRMADO) happens ONLY via approved payment webhook
 
-    Why auto_confirmar? Customers want their order confirmed immediately.
-    Managers can set auto_confirmar=False to leave it in PENDIENTE for manual review.
+    Note: auto_confirmar was removed. Confirmation is exclusively via MercadoPago webhook.
     """
-    es_gestor = any(rol.codigo in ("ADMIN", "PEDIDOS") for rol in current_user.roles)
-
     if data.usuario_id is None:
         data.usuario_id = current_user.id
 
     pedido = PedidoService.create(session, data)
-
-    # Auto-advance to CONFIRMADO for client users (deducts stock)
-    if not es_gestor and auto_confirmar:
-        try:
-            pedido, _ = PedidoService.avanzar_estado(session, pedido.id, current_user)
-        except HTTPException:
-            raise
-        except Exception:
-            # If auto-advance fails for non-HTTP reasons, the order stays in PENDIENTE
-            pass
-
     return pedido
 
 
@@ -172,10 +188,12 @@ def avanzar(
     """PATCH /pedidos/{id}/avanzar — Advance the order to the next FSM state.
 
     Transitions:
-        PENDIENTE -> CONFIRMADO (deducts stock)
         CONFIRMADO -> EN_PREP (preparation started)
         EN_PREP -> EN_CAMINO (out for delivery)
         EN_CAMINO -> ENTREGADO (delivered)
+
+    NOTE: PENDIENTE -> CONFIRMADO is EXCLUSIVELY via payment webhook.
+    This endpoint does NOT handle that transition anymore.
 
     Requires ADMIN or PEDIDOS role.
     """
@@ -197,9 +215,8 @@ def cancelar(
     """PATCH /pedidos/{id}/cancelar — Cancel an order.
 
     Permission rules:
-        ADMIN/PEDIDOS: can cancel ANY order at ANY state
-        Regular customer: can only cancel PENDIENTE or CONFIRMADO orders
-            (once EN_PREP, the kitchen has started — cancellation is blocked)
+        ALL roles can only cancel orders in PENDIENTE or CONFIRMADO state.
+        Cancelation is blocked for EN_PREP, EN_CAMINO, and terminal states.
     """
     pedido = PedidoService.cancelar_pedido(session, pedido_id, current_user)
     return PedidoCancelarResponse(

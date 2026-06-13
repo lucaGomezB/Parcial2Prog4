@@ -6,10 +6,9 @@ Provides:
 - RefreshTokenRepository: refresh token lifecycle management.
 """
 
-from datetime import datetime
-
 from sqlmodel import Session, select
 
+from models.base import get_utc_now
 from models.base_repository import BaseRepository
 from modules.IdentidadYAcceso.Usuario.models import Usuario
 from modules.IdentidadYAcceso.RefreshToken.models import RefreshToken
@@ -57,9 +56,46 @@ class RefreshTokenRepository(BaseRepository[RefreshToken]):
         statement = select(RefreshToken).where(
             RefreshToken.token_hash == token_hash,
             RefreshToken.revoked_at.is_(None),
-            RefreshToken.expires_at > datetime.utcnow(),
+            RefreshToken.expires_at > get_utc_now(),
         )
         return self.session.exec(statement).first()
+
+    def get_by_hash_including_revoked(self, token_hash: str) -> RefreshToken | None:
+        """
+        Find a refresh token by its SHA-256 hash, INCLUDING revoked tokens.
+
+        Unlike get_by_hash, this method does NOT filter by revoked_at IS NULL.
+        Used for replay attack detection: we need to find a token even if it
+        was already revoked in a previous rotation.
+
+        Also does NOT filter by expiration — a revoked token might be expired
+        but we still need to detect the replay pattern.
+        """
+        statement = select(RefreshToken).where(
+            RefreshToken.token_hash == token_hash
+        )
+        return self.session.exec(statement).first()
+
+    def revoke_all_for_user(self, usuario_id: int):
+        """
+        Revoke ALL non-expired, non-revoked refresh tokens for a user.
+
+        Used when a replay attack is detected: we assume the user's session
+        has been compromised and invalidate every active token they hold.
+
+        Only revokes tokens that are still active (not yet revoked and not
+        yet expired) to avoid touching already-invalidated records.
+        """
+        now = get_utc_now()
+        statement = select(RefreshToken).where(
+            RefreshToken.usuario_id == usuario_id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > now,
+        )
+        active_tokens = self.session.exec(statement).all()
+        for token in active_tokens:
+            token.revoked_at = now
+            self.session.add(token)
 
     def get_expired(self) -> list[RefreshToken]:
         """
@@ -69,7 +105,7 @@ class RefreshTokenRepository(BaseRepository[RefreshToken]):
         and prevent database bloat.
         """
         statement = select(RefreshToken).where(
-            RefreshToken.expires_at < datetime.utcnow()
+            RefreshToken.expires_at < get_utc_now()
         )
         return self.session.exec(statement).all()
 

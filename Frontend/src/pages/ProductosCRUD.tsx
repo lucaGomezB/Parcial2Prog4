@@ -31,7 +31,7 @@ import type { Categoria } from "../api/categorias";
 import { categoriasApi } from "../api/categorias";
 import { useNavigate } from "react-router-dom";
 import { exportToExcel } from "../utils/exportExcel";
-import { addToCart, getItemCount } from "../utils/carrito";
+import { useCartStore } from "../store/cartStore";
 import { AxiosError } from "axios";
 import { getAccessToken } from "../api/client";
 
@@ -715,7 +715,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
 
   /** Adds a product to the cart (localStorage) and shows visual feedback. */
   const handleAddToCart = (prod: Producto) => {
-    addToCart(prod.id, prod.nombre, Number(prod.precio_actual));
+    useCartStore.getState().addToCart(prod.id, prod.nombre, Number(prod.precio_actual));
     triggerFeedback(prod.id);
   };
 
@@ -1391,7 +1391,7 @@ export default function ProductosCRUD({ role = 'admin' }: { role?: 'admin' | 'st
             onClick={() => navigate("/carrito")}
             className="bg-green-700 text-white px-4 py-1.5 rounded text-sm font-semibold hover:bg-green-800 cursor-pointer"
           >
-            Ver Carrito {getItemCount() > 0 ? `(${getItemCount()})` : ""}
+            Ver Carrito {useCartStore.getState().getItemCount() > 0 ? `(${useCartStore.getState().getItemCount()})` : ""}
           </button>
         )}
       </div>

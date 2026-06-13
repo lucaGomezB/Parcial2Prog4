@@ -146,8 +146,8 @@ function DetallesPopup({ pedido, detalles, onClose, esGestor, pagos }: {
           Total: <span className="text-blue-700">${parseFloat(pedido.total).toFixed(2)}</span>
         </div>
 
-        {/* Payment status section — only for gestor users */}
-        {esGestor && pagos && pagos.length > 0 && (
+        {/* Payment status section — shown for all users when there are payments */}
+        {pagos && pagos.length > 0 && (
           <>
             <h3 className="text-md font-semibold mb-2 border-t pt-3">Pagos</h3>
             <table className="w-full border-collapse border">
@@ -595,7 +595,9 @@ export default function PedidosPage() {
                       <button
                         onClick={async () => {
                           setDetailPopup(ped);
-                          if (esGestor && !pagosMap[ped.id]) {
+                          // Fetch payment info: gestores see all, clients see MP payments only
+                          const shouldFetchPagos = esGestor || ped.forma_pago_codigo === "MERCADOPAGO";
+                          if (shouldFetchPagos && !pagosMap[ped.id]) {
                             try {
                               const pagos = await pagosApi.getPagosByPedido(ped.id);
                               setPagosMap((prev) => ({ ...prev, [ped.id]: pagos }));

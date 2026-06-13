@@ -28,28 +28,32 @@ from . import service
 from .dependencies import get_current_user
 from modules.IdentidadYAcceso.Usuario.models import Usuario
 from modules.IdentidadYAcceso.Usuario.schemas import UsuarioCreate
-from modules.IdentidadYAcceso.Usuario.service import crear_usuario
+from modules.IdentidadYAcceso.Usuario.service import crear_usuario, obtener_usuario
+from modules.IdentidadYAcceso.Usuario.repository import UsuarioRepository
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
 COOKIE_MAX_AGE = settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400  # Convert days to seconds
 
 
-def _set_refresh_cookie(response: Response, token: str):
+def _set_refresh_cookie(request: Request, response: Response, token: str):
     """
     Helper to set the refresh_token as an httpOnly cookie.
 
     Configuration:
     - httponly=True: prevents JavaScript access (XSS protection).
     - samesite="lax": CSRF protection (cookie sent only for same-site requests).
+    - secure=True: only sent over HTTPS (prevents man-in-the-middle).
     - path="/": cookie sent on all requests (including Vite proxy path /api/...).
     - max_age: cookie lifetime in seconds (matches token lifetime).
     """
+    secure = request.url.scheme == "https"
     response.set_cookie(
         key="refresh_token",
         value=token,
         httponly=True,
         samesite="lax",
+        secure=secure,
         max_age=COOKIE_MAX_AGE,
         path="/",
     )
@@ -71,6 +75,7 @@ def _clear_refresh_cookie(response: Response):
 @router.post("/register", response_model=TokenResponse)
 def register(
     datos: UsuarioCreate,
+    request: Request,
     response: Response,
     session: Session = Depends(get_session),
 ):
@@ -87,25 +92,28 @@ def register(
     user = crear_usuario(session, datos)
 
     # Auto-login: issue tokens immediately after registration
-    token_data = TokenData(user_id=user.id, email=user.email)
+    token_data = TokenData(
+        user_id=user.id,
+        email=user.email,
+        roles=[rol.codigo for rol in user.roles]
+    )
     access_token = create_access_token(
         token_data,
         timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     refresh_token = service.create_refresh_token(session, user.id)
 
-    _set_refresh_cookie(response, refresh_token)
+    _set_refresh_cookie(request, response, refresh_token)
 
     return TokenResponse(
         access_token=access_token,
-        refresh_token=refresh_token,
         token_type="bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
 
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit("5/minute")
+@limiter.limit("5/15minutes")
 def login(
     request: Request,
     credentials: LoginRequest,
@@ -115,7 +123,7 @@ def login(
     """
     POST /auth/login — Authenticate a user with email and password.
 
-    Rate limited to 5 attempts per minute per IP to prevent brute-force
+    Rate limited to 5 attempts per 15 minutes per IP to prevent brute-force
     attacks. On success, returns an access_token (for Authorization header)
     and sets a refresh_token in an httpOnly cookie (for session renewal).
     """
@@ -128,18 +136,23 @@ def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token_data = TokenData(user_id=user.id, email=user.email)
+    # Fetch user with roles for JWT payload
+    user_with_roles = UsuarioRepository(session).get_with_roles(user.id)
+    token_data = TokenData(
+        user_id=user.id,
+        email=user.email,
+        roles=[rol.codigo for rol in user_with_roles.roles]
+    )
     access_token = create_access_token(
         token_data,
         timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     refresh_token = service.create_refresh_token(session, user.id)
 
-    _set_refresh_cookie(response, refresh_token)
+    _set_refresh_cookie(request, response, refresh_token)
 
     return TokenResponse(
         access_token=access_token,
-        refresh_token=refresh_token,
         token_type="bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
@@ -190,8 +203,27 @@ def refresh(
             detail="No se encontró refresh token",
         )
 
+    import hashlib
+
     stored_token = service.validate_refresh_token(session, raw_token)
     if not stored_token:
+        # Check if this is a replay attack (token exists but is revoked)
+        from .repository import RefreshTokenRepository
+        repo = RefreshTokenRepository(session)
+        token_hash = hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
+        was_revoked = repo.get_by_hash_including_revoked(token_hash)
+
+        if was_revoked and was_revoked.revoked_at is not None:
+            # Replay attack detected — revoke ALL active tokens for this user
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "REPLAY ATTACK DETECTED: revoked token reused for usuario_id=%s. "
+                "Revoking ALL active tokens.",
+                was_revoked.usuario_id,
+            )
+            repo.revoke_all_for_user(was_revoked.usuario_id)
+
         _clear_refresh_cookie(response)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -199,27 +231,34 @@ def refresh(
         )
 
     # Revoke old token (token rotation — prevents replay attacks)
-    service.revoke_refresh_token(session, raw_token)
+    revoked = service.revoke_refresh_token(session, raw_token)
+    if not revoked:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning("Refresh token revocation returned False during rotation for usuario_id=%s", stored_token.usuario_id)
 
     # Retrieve the token owner
-    user = session.get(Usuario, stored_token.usuario_id)
+    user = obtener_usuario(session, stored_token.usuario_id)
     if not user:
         _clear_refresh_cookie(response)
         raise HTTPException(status_code=401, detail="Usuario no encontrado")
 
     # Issue new token pair
-    token_data = TokenData(user_id=user.id, email=user.email)
+    token_data = TokenData(
+        user_id=user.id,
+        email=user.email,
+        roles=[rol.codigo for rol in user.roles]
+    )
     access_token = create_access_token(
         token_data,
         timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     new_refresh_token = service.create_refresh_token(session, user.id)
 
-    _set_refresh_cookie(response, new_refresh_token)
+    _set_refresh_cookie(request, response, new_refresh_token)
 
     return TokenResponse(
         access_token=access_token,
-        refresh_token=new_refresh_token,
         token_type="bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
@@ -240,6 +279,9 @@ def logout(
     """
     raw_token = request.cookies.get("refresh_token")
     if raw_token:
-        service.revoke_refresh_token(session, raw_token)
+        revoked = service.revoke_refresh_token(session, raw_token)
+        if not revoked:
+            import logging
+            logging.getLogger(__name__).warning("Refresh token revocation returned False during logout")
     _clear_refresh_cookie(response)
     return {"message": "Sesión cerrada correctamente"}

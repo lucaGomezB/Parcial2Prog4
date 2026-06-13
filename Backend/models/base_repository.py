@@ -50,6 +50,22 @@ class BaseRepository(Generic[T]):
         except TypeError:
             # issubclass raises TypeError if model_class is not a class
             pass
+        # Flag to disable soft-delete filtering (for ADMIN visibility of deleted records)
+        self._incluir_eliminados = False
+
+    def with_deleted(self, incluir: bool = True):
+        """
+        When True, soft-delete filtering is DISABLED for subsequent queries.
+        Only affects models that inherit from SoftDeleteModel.
+        Useful for ADMIN endpoints that need to see deleted records.
+
+        Usage:
+            repo = UsuarioRepository(session)
+            repo.with_deleted(True)
+            all_users = repo.get_all()
+        """
+        self._incluir_eliminados = incluir
+        return self
 
     # ------------------------------------------------------------------
     # Write operations
@@ -128,7 +144,7 @@ class BaseRepository(Generic[T]):
         """
         pk_col = self._get_pk_attr()
         statement = select(self.model_class).where(pk_col == entity_id)
-        if self._is_soft_delete:
+        if self._is_soft_delete and not self._incluir_eliminados:
             statement = statement.where(
                 col(self.model_class.deleted_at).is_(None)  # type: ignore[attr-defined]
             )
@@ -144,7 +160,7 @@ class BaseRepository(Generic[T]):
         """
         pk_col = self._get_pk_attr()
         statement = select(self.model_class)
-        if self._is_soft_delete:
+        if self._is_soft_delete and not self._incluir_eliminados:
             statement = statement.where(
                 col(self.model_class.deleted_at).is_(None)  # type: ignore[attr-defined]
             )

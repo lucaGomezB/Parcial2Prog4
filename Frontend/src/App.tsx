@@ -12,7 +12,7 @@ import SessionTimeoutModal from './components/SessionTimeoutModal'
 import Login from './pages/LoginConceptual'
 import { apiFetch, getAccessToken, refreshSession } from './api/client'
 import type { UserInfo } from './api/client'
-import { getItemCount } from './utils/carrito'
+import { useCartStore } from './store/cartStore'
 import { useAuthStore } from './store/authStore'
 
 /* ── Helpers ── */
@@ -61,6 +61,24 @@ function App() {
    */
   useEffect(() => {
     async function bootstrap() {
+      // Re-hydrate cart from localStorage using the current user's key
+      useCartStore.getState().hydrate();
+
+      const { accessToken, expiresAt } = useAuthStore.getState()
+
+      // If we have a token from localStorage and it's not expired, verify it
+      if (accessToken && expiresAt && Date.now() < expiresAt) {
+        try {
+          const user = await apiFetch<UserInfo>('/auth/me')
+          useAuthStore.getState().setUser(user)
+          setVerifying(false)
+          return
+        } catch {
+          // Token invalid — fall through to try refresh or logout
+        }
+      }
+
+      // No valid token in localStorage — try httpOnly cookie refresh
       const hasSession = await refreshSession()
 
       if (!hasSession) {
@@ -93,6 +111,7 @@ function App() {
       // If the server call fails, still clear local state to prevent lockout.
     }
     useAuthStore.getState().logout()
+    useCartStore.getState().hydrate()
     navigate('/login')
   }
 
@@ -122,7 +141,7 @@ function App() {
   const isStock = hasRole(roles, 'STOCK')
   const isPedidos = hasRole(roles, 'PEDIDOS')
 
-  const cartCount = getItemCount()
+  const cartCount = useCartStore((s) => s.getItemCount())
 
   // Build navigation items based on the user's role.
   let navItems: { to: string; label: string }[];

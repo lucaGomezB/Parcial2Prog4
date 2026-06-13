@@ -14,8 +14,8 @@ The state machine transitions are hardcoded in PedidoService.
 """
 from typing import Optional, List, TYPE_CHECKING
 from decimal import Decimal
-from sqlalchemy import Numeric
-from sqlmodel import SQLModel, Field, Relationship, Column
+from sqlalchemy import JSON, Column, Numeric
+from sqlmodel import SQLModel, Field, Relationship
 from models.base import TimestampModel, SoftDeleteModel
 
 # Same-package imports — safe, no circular dependency
@@ -55,6 +55,7 @@ class PedidoBase(TimestampModel):
     costo_envio: Decimal = Field(default=Decimal('50.00'), sa_column=Column(Numeric(precision=10, scale=2)))
     total: Decimal = Field(sa_column=Column(Numeric(precision=10, scale=2), nullable=False))
     notas: Optional[str] = Field(default=None)
+    direccion_snapshot: Optional[dict] = Field(default=None, sa_column=Column(JSON))
 
 
 class Pedido(PedidoBase, SoftDeleteModel, table=True):

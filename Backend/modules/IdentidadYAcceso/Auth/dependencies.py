@@ -16,11 +16,11 @@ JWT decoding is delegated to core.security.decode_token.
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlmodel import Session, select
-from sqlalchemy.orm import selectinload
+from sqlmodel import Session
 from core.database import get_session
 from core.security import decode_token, TokenData
 from modules.IdentidadYAcceso.Usuario.models import Usuario
+from ..Usuario.repository import UsuarioRepository
 
 # HTTPBearer extracts the token from the "Authorization: Bearer <token>" header.
 # auto_error=False means we handle missing tokens manually (for optional auth).
@@ -55,17 +55,17 @@ def get_current_user(
     if not token_data:
         raise credentials_exception
 
-    # Load user with roles (eager loading to prevent lazy loading issues)
-    stmt = (
-        select(Usuario)
-        .where(Usuario.id == token_data.user_id)
-        .options(selectinload(Usuario.roles))
-    )
-    user = session.exec(stmt).first()
+    # Load user without roles (lighter) and attach roles from JWT
+    from types import SimpleNamespace
+
+    repo = UsuarioRepository(session)
+    user = repo.get_by_id(token_data.user_id)
 
     if not user:
         raise credentials_exception
 
+    # Attach roles from the JWT instead of loading from DB
+    user.roles = [SimpleNamespace(codigo=r) for r in token_data.roles]
     return user
 
 
@@ -87,12 +87,14 @@ def get_current_user_optional(
     if not token_data:
         return None
 
-    stmt = (
-        select(Usuario)
-        .where(Usuario.id == token_data.user_id)
-        .options(selectinload(Usuario.roles))
-    )
-    return session.exec(stmt).first()
+    # Load user without roles and attach roles from JWT
+    from types import SimpleNamespace
+
+    repo = UsuarioRepository(session)
+    user = repo.get_by_id(token_data.user_id)
+    if user:
+        user.roles = [SimpleNamespace(codigo=r) for r in token_data.roles]
+    return user
 
 
 def require_roles(allowed_roles: list):

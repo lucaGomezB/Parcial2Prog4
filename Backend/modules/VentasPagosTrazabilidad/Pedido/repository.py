@@ -159,3 +159,52 @@ class PedidoRepository(BaseRepository[Pedido]):
         """Fetch a single ingredient by ID (cross-module)."""
         from modules.CatalogoDeProductos.Ingrediente.models import Ingrediente
         return self.session.get(Ingrediente, ingrediente_id)
+
+    # ------------------------------------------------------------------
+    # Count methods
+    # ------------------------------------------------------------------
+
+    def count_all(self) -> int:
+        """Count all non-deleted orders."""
+        from sqlmodel import func
+        from sqlalchemy import column
+        statement = select(func.count()).select_from(self.model_class)
+        statement = statement.where(column("deleted_at").is_(None))
+        result = self.session.exec(statement)
+        return result.one()
+
+    def count_activos(self) -> int:
+        """Count non-terminal (not ENTREGADO or CANCELADO) non-deleted orders."""
+        from sqlmodel import func
+        from sqlalchemy import column
+        statement = select(func.count()).select_from(self.model_class)
+        statement = statement.where(
+            column("estado_codigo").not_in(ESTADOS_TERMINALES),
+            column("deleted_at").is_(None),
+        )
+        result = self.session.exec(statement)
+        return result.one()
+
+    def count_historial(self) -> int:
+        """Count terminal-state (ENTREGADO or CANCELADO) non-deleted orders."""
+        from sqlmodel import func
+        from sqlalchemy import column
+        statement = select(func.count()).select_from(self.model_class)
+        statement = statement.where(
+            column("estado_codigo").in_(ESTADOS_TERMINALES),
+            column("deleted_at").is_(None),
+        )
+        result = self.session.exec(statement)
+        return result.one()
+
+    def count_by_usuario_id(self, usuario_id: int) -> int:
+        """Count non-deleted orders for a given user."""
+        from sqlmodel import func
+        from sqlalchemy import column
+        statement = select(func.count()).select_from(self.model_class)
+        statement = statement.where(
+            column("usuario_id") == usuario_id,
+            column("deleted_at").is_(None),
+        )
+        result = self.session.exec(statement)
+        return result.one()

@@ -16,7 +16,7 @@ import { useReducer, useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { productosApi } from "../api/productos";
 import type { Producto } from "../api/productos";
-import { addToCart, getItemCount } from "../utils/carrito";
+import { useCartStore } from "../store/cartStore";
 import { getAccessToken } from "../api/client";
 import ProductCard from "./ProductCard";
 
@@ -77,7 +77,7 @@ export default function ProductosCliente() {
 
   /** Adds a product to the cart and triggers visual feedback. */
   const handleAddToCart = (prod: Producto) => {
-    addToCart(prod.id, prod.nombre, Number(prod.precio_base));
+    useCartStore.getState().addToCart(prod.id, prod.nombre, Number(prod.precio_base));
     triggerFeedback(prod.id);
   };
 
@@ -197,7 +197,7 @@ export default function ProductosCliente() {
                 onClick={() => navigate("/carrito")}
                 className="bg-green-700 text-white px-4 py-1.5 rounded text-sm font-semibold hover:bg-green-800 cursor-pointer"
               >
-                Ver Carrito {getItemCount() > 0 ? `(${getItemCount()})` : ""}
+                Ver Carrito {useCartStore.getState().getItemCount() > 0 ? `(${useCartStore.getState().getItemCount()})` : ""}
               </button>
             )}
           </div>

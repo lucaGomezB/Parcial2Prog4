@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from sqlmodel import Session
 from core.database import get_session
+from core.paginated_response import PaginatedResponse
 from modules.IdentidadYAcceso.Auth.dependencies import require_roles
 from .service import CategoriaService
 from .schemas import CategoriaRead, CategoriaCreate, CategoriaTree, CategoriaUpdate
@@ -27,7 +28,7 @@ def get_tree(session: Session = Depends(get_session)):
     return CategoriaService.get_root_categories(session)
 
 # Lo usamos para debugging
-@router.get("/", response_model=list[CategoriaRead])
+@router.get("/", response_model=PaginatedResponse[CategoriaRead])
 def read_categorias(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=10000),

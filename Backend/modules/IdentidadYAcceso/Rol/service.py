@@ -26,6 +26,17 @@ def get_roles(session: Session):
         return uow.roles.get_all()
 
 
+def get_rol_by_codigo(session: Session, codigo: str) -> Rol | None:
+    """Retrieve a single role by its semantic primary key (codigo).
+
+    Uses the repository's get_by_codigo method which delegates
+    to session.get() with the Rol model's semantic PK.
+    Returns None if not found.
+    """
+    with IdentidadYAccesoUnitOfWork(session) as uow:
+        return uow.roles.get_by_codigo(codigo)
+
+
 def update_rol(session: Session, codigo: str, data: RolUpdate):
     """
     Partially update a role by its semantic code.

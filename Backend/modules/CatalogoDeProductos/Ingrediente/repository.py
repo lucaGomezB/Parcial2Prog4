@@ -35,3 +35,12 @@ class IngredienteRepository(BaseRepository[Ingrediente]):
             .where(col(Ingrediente.deleted_at).is_(None))
         )
         return self.session.exec(statement).first()
+
+    def count_all(self) -> int:
+        """Count all non-deleted ingredients."""
+        from sqlmodel import func
+        from sqlalchemy import column
+        statement = select(func.count()).select_from(self.model_class)
+        statement = statement.where(column("deleted_at").is_(None))
+        result = self.session.exec(statement)
+        return result.one()

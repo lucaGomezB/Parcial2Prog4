@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 from typing import List
 from core.database import get_session
+from core.paginated_response import PaginatedResponse
 from modules.IdentidadYAcceso.Auth.dependencies import require_roles
 from .service import ProductoService
 from .schemas import ProductoRead, ProductoCreate, ProductoUpdate, ProductoIngredienteRead, ProductoCategoriaRead, IngredienteAsignado, CategoriaAsignada
@@ -19,7 +20,7 @@ router = APIRouter(prefix="/productos", tags=["Productos"])
 
 # --- Public GET endpoints (no auth required) ---
 
-@router.get("/", response_model=List[ProductoRead])
+@router.get("/", response_model=PaginatedResponse[ProductoRead])
 def read_productos(skip: int = 0, limit: int = 100, session: Session = Depends(get_session)):
     """GET /productos — List all products with pagination. Public endpoint, no auth required."""
     return ProductoService.get_all(session, skip=skip, limit=limit)

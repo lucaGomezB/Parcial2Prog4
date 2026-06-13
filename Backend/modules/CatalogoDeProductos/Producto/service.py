@@ -15,6 +15,7 @@ from sqlmodel import Session
 from .models import Producto
 from .repository import ProductoRepository
 from .schemas import ProductoCreate, ProductoRead, ProductoUpdate, IngredienteAsignado, CategoriaAsignada
+from core.paginated_response import PaginatedResponse
 from models.base import get_utc_now
 from ..Categoria.models import Categoria
 from ..Ingrediente.models import Ingrediente
@@ -148,7 +149,7 @@ class ProductoService:
             # NOTE: No manual uow.commit() — the UoW __exit__ handles it automatically.
 
     @staticmethod
-    def get_all(session: Session, skip: int = 0, limit: int = 100):
+    def get_all(session: Session, skip: int = 0, limit: int = 100) -> PaginatedResponse[ProductoRead]:
         """List all non-deleted products with pagination and ingredient flag.
 
         Read-only: does NOT use UoW because commit() would expire ORM objects,
@@ -159,9 +160,7 @@ class ProductoService:
         """
         repo = ProductoRepository(session)
         productos, ids_with_ingredients = repo.get_all_with_ingredient_flag(skip=skip, limit=limit)
-
-        if not productos:
-            return productos
+        total = repo.count_all()
 
         # Build ProductoRead response with computed tiene_ingredientes
         result = []
@@ -175,7 +174,12 @@ class ProductoService:
                     tiene_ingredientes=p.id in ids_with_ingredients,
                 )
             )
-        return result
+        return PaginatedResponse(
+            items=result,
+            total=total,
+            skip=skip,
+            limit=limit,
+        )
 
     @staticmethod
     def get_by_id(session: Session, producto_id: int):

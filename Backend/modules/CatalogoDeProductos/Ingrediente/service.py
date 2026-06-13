@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from .models import Ingrediente
 from .repository import IngredienteRepository
 from .schemas import IngredienteCreate, IngredienteRead, IngredienteUpdate
+from core.paginated_response import PaginatedResponse
 from models.base import get_utc_now
 from ..uow import CatalogoDeProductosUnitOfWork
 from ..Producto.service import ProductoService
@@ -41,14 +42,20 @@ class IngredienteService:
             return db_ingrediente
 
     @staticmethod
-    def get_all(session: Session, skip: int = 0, limit: int = 100) -> List[IngredienteRead]:
+    def get_all(session: Session, skip: int = 0, limit: int = 100) -> PaginatedResponse[IngredienteRead]:
         """List non-deleted ingredients with pagination.
 
         Read-only: uses repository directly (no UoW) to avoid commit/expire.
         """
         repo = IngredienteRepository(session)
         rows = repo.get_all_paginated(skip=skip, limit=limit)
-        return [IngredienteRead.model_validate(r) for r in rows]
+        total = repo.count_all()
+        return PaginatedResponse(
+            items=[IngredienteRead.model_validate(r) for r in rows],
+            total=total,
+            skip=skip,
+            limit=limit,
+        )
 
     @staticmethod
     def get_by_id(session: Session, ingrediente_id: int) -> Optional[IngredienteRead]:

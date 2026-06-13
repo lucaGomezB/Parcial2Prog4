@@ -59,3 +59,12 @@ class CategoriaRepository(BaseRepository[Categoria]):
             .limit(1)
         )
         return self.session.exec(statement).first() is not None
+
+    def count_all(self) -> int:
+        """Count all non-deleted categories."""
+        from sqlmodel import func
+        from sqlalchemy import column
+        statement = select(func.count()).select_from(self.model_class)
+        statement = statement.where(column("deleted_at").is_(None))
+        result = self.session.exec(statement)
+        return result.one()
