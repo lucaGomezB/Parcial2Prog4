@@ -43,11 +43,28 @@ Al cargar la página, el sistema DEBE intentar renovar la sesión llamando a `PO
 - **THEN** la UI se muestra como invitado (catálogo público)
 
 ### Requirement: Interceptor 401 usa el store
-El sistema DEBE actualizar el response interceptor de Axios para usar el store en vez de eventos para el logout por expiración.
+El sistema DEBE actualizar el response interceptor de Axios para manejar errores 401 con exclusion de endpoints de autenticacion y serializacion atomica de refresh via promesa.
 
-#### Scenario: 401 en refresh usa store.logout()
-- **WHEN** el refresh token falla (401) durante una petición
-- **THEN** el interceptor llama `useAuthStore.getState().logout()` en vez de `clearAuth()` + evento `session:expired`
+#### Scenario: 401 en login o register no dispara refresh
+- **WHEN** una peticion a `/auth/login` o `/auth/register` recibe respuesta 401
+- **THEN** el interceptor NO intenta refresh del token
+- **THEN** el error 401 se propaga directamente al caller con el mensaje original del backend (ej. "Email o contraseña incorrectos")
+
+#### Scenario: 401 en refresh o logout hace logout directo
+- **WHEN** una peticion a `/auth/refresh` o `/auth/logout` recibe respuesta 401
+- **THEN** el interceptor llama `useAuthStore.getState().logout()` y rechaza la promesa
+
+#### Scenario: 401 en otros endpoints dispara refresh serializado
+- **WHEN** una peticion a cualquier otro endpoint recibe respuesta 401
+- **THEN** el interceptor intenta exactamente una llamada a `POST /auth/refresh`
+- **THEN** si el refresh es exitoso, reintenta la peticion original con el nuevo token
+- **THEN** si el refresh falla, llama `useAuthStore.getState().logout()` y rechaza
+
+#### Scenario: Refresh concurrentes se serializan atómicamente
+- **WHEN** dos peticiones concurrentes reciben 401 simultaneamente
+- **THEN** solo se ejecuta UNA llamada a `POST /auth/refresh`
+- **THEN** la segunda peticion espera a que el refresh comun termine y reusa el nuevo token
+- **THEN** no se producen llamadas duplicadas que activen la deteccion de replay attack del backend
 
 ### Requirement: App.tsx consume el store
 El sistema DEBE migrar App.tsx para obtener `userRoles` del store Zustand en vez de `useState`.

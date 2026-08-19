@@ -1,0 +1,63 @@
+name: food-store
+
+services:
+  db:
+    image: postgres:16
+    container_name: food-store-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: food_store
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d food_store"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - food-store-network
+
+  backend:
+    build:
+      context: ./App/Backend
+    container_name: food-store-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./App/Backend/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/food_store
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - food-store-network
+
+  frontend:
+    build:
+      context: ./App/Frontend
+    container_name: food-store-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    env_file:
+      - ./App/Frontend/.env
+    environment:
+      VITE_API_TARGET: http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - food-store-network
+
+networks:
+  food-store-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

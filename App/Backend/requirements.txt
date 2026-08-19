@@ -1,0 +1,35 @@
+# Web Framework & ORM
+fastapi>=0.115.0,<0.116.0
+starlette>=0.37.2,<0.39.0  # pinned: Kludex fork (1.x) is incompatible
+sqlmodel>=0.0.38
+pydantic>=2.13.0
+
+# Servidor ASGI (Indispensable para correr FastAPI)
+uvicorn[standard]
+
+# Base de Datos
+psycopg2-binary        # Driver para PostgreSQL
+alembic                # Para migraciones (crucial si tu UML cambia)
+
+# Utilidades
+python-dotenv
+email-validator      # Para EmailStr de Pydantic
+python-multipart     # Para Form/File en FastAPI (subida a Cloudinary)
+
+# JWT Authentication
+PyJWT
+bcrypt
+
+# Rate Limiting
+slowapi
+
+# MercadoPago Integration
+mercadopago==2.4.0
+
+# Cloudinary SDK for Image Uploads
+cloudinary>=1.41,<2.0
+
+# Testing
+pytest
+pytest-cov
+httpx

@@ -1,0 +1,24 @@
+// Este archivo cumple la única función de ayudar a organizar el desarrollo inicial del proyecto.
+
+/backend
+├── .env                     # Credenciales de PostgreSQL
+├── main.py                  # FastAPI + Lifespan + Inclusión de Routers
+├── database.py              # Engine y Session de SQLModel
+├── /models                  # Solo clases base transversales
+│   └── base.py              # Mixins: TimestampModel, SoftDeleteModel
+└── /modules                 # Aquí vive la lógica por "clase", dividida por directorios correspondientes a la organización del UML.
+    ├── /usuarios
+    │   ├── models.py        # Tabla SQLModel de Usuario
+    │   ├── schemas.py       # DTOs (UsuarioCreate, UsuarioRead)
+    │   ├── router.py        # Endpoints /usuarios
+    │   └── service.py       # Lógica de negocio (ej. crear hash de clave)
+    ├── /productos
+    │   ├── models.py        # Tabla SQLModel de Producto
+    │   ├── schemas.py       
+    │   ├── router.py        # Endpoints /productos
+    │   └── service.py
+    └── /pedidos
+        ├── models.py        # Tabla SQLModel de Pedido
+        ├── schemas.py
+        ├── router.py
+        └── service.py       # Lógica de Snapshots monetarios

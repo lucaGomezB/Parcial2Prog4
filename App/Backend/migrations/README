@@ -1,0 +1,8 @@
+Generic single-database configuration.
+
+Carpeta generada y gestionada por Alembic que versiona el esquema de la BD. 
+Está para que se puedan cambiar los modelos sin tantas complicaciones, sobre todo en producción.
+
+Las Migrations son instrucciones SQL construidas en Python que dicen exactamente qué cambiar y en qué orden.
+
+Alembic es el git de las BD.

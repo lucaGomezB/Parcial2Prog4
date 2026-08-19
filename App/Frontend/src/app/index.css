@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+.allergen-badge {
+  background-color: #F59E0B;
+  color: #1F2937;
+  font-weight: 600;
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}

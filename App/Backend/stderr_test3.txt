@@ -1,0 +1,5 @@
+INFO:     Started server process [2464]
+INFO:     Waiting for application startup.
+INFO  [main] Running Alembic migrations...
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.

@@ -1,10 +1,15 @@
-Backend/.env
-Frontend/.env
+App/Backend/.env
+App/Frontend/.env
+.venv/
+venv/
 node_modules/
 dist/
 build/
 __pycache__/
 *.pyc
+*.log
+App/Backend/logs/
 docs/50-preguntas-examen.md
 .engram
 openspec/
+docs/Recursos/mp.md

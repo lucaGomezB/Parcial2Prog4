@@ -1,18 +1,23 @@
 ## ADDED Requirements
 
-### Requirement: Sistema gestiona catálogo de estados de pedido
+### Requirement: Sistema gestiona catálogo de 5 estados de pedido
 
-El sistema SHALL mantener un catálogo `EstadoPedido` con PK semántica `codigo` (VARCHAR(20)) que contenga los 6 estados FSM: PENDIENTE, CONFIRMADO, EN_PREP, EN_CAMINO, ENTREGADO, CANCELADO. Cada estado tiene `descripcion`, `orden` (1-6) y `es_terminal` (boolean). El seed SHALL ser idempotente.
+El sistema SHALL mantener un catálogo `EstadoPedido` con PK semántica `codigo` (VARCHAR(20)) que contenga los 5 estados FSM: PENDIENTE, CONFIRMADO, EN_PREP, ENTREGADO, CANCELADO. Cada estado tiene `descripcion`, `orden` (1-5) y `es_terminal` (boolean). El seed SHALL ser idempotente. El estado EN_CAMINO se elimina del catalogo.
 
 #### Scenario: Catálogo se crea con seed
 - **WHEN** se ejecuta `python scripts/sprint_seed.py`
-- **THEN** la tabla `estadopedido` contiene exactamente 6 filas con los códigos PENDIENTE, CONFIRMADO, EN_PREP, EN_CAMINO, ENTREGADO, CANCELADO
+- **THEN** la tabla `estadopedido` contiene exactamente 5 filas con los códigos PENDIENTE, CONFIRMADO, EN_PREP, ENTREGADO, CANCELADO
 - **THEN** ENTREGADO y CANCELADO tienen `es_terminal = true`
-- **THEN** los órdenes son 1, 2, 3, 4, 5, 6 respectivamente
+- **THEN** los órdenes son 1 (PENDIENTE), 2 (CONFIRMADO), 3 (EN_PREP), 4 (ENTREGADO), 5 (CANCELADO)
 
 #### Scenario: Seed es idempotente
 - **WHEN** se ejecuta el seed dos veces
-- **THEN** la tabla `estadopedido` sigue teniendo exactamente 6 filas
+- **THEN** la tabla `estadopedido` sigue teniendo exactamente 5 filas
+
+#### Scenario: Estado EN_CAMINO no existe en el catalogo
+- **WHEN** se consulta `GET /estados-pedido/`
+- **THEN** la respuesta contiene 5 estados
+- **THEN** EN_CAMINO no aparece en la lista de codigos
 
 ### Requirement: Sistema gestiona catálogo de formas de pago
 
